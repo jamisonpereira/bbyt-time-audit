@@ -10,7 +10,9 @@ Download the latest Apple Silicon Mac build from the Releases page:
 
 [Download BBYT - Time Audit](https://github.com/jamisonpereira/bbyt-time-audit/releases/latest)
 
-Choose the `.zip` file for `darwin-arm64`, unzip it, and move `BBYT - Time Audit.app` into your Applications folder.
+Choose the `.dmg` file for `darwin-arm64`, open it, and drag `BBYT - Time Audit.app` into Applications.
+
+If the `.dmg` is unavailable for a release, use the `.zip` fallback: unzip it and move `BBYT - Time Audit.app` into your Applications folder.
 
 ## First Launch On macOS
 
@@ -32,8 +34,8 @@ The app checks GitHub Releases for newer versions. If an update is available, it
 
 Updates are manual for now:
 
-1. Download the newest `.zip` from the Releases page.
-2. Unzip it.
+1. Download the newest `.dmg` from the Releases page.
+2. Open the `.dmg`.
 3. Replace the old `BBYT - Time Audit.app` in Applications.
 
 ## Privacy

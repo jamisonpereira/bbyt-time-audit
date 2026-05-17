@@ -42,16 +42,22 @@
 
 4. Create a GitHub Release for the new tag.
 
-5. Upload the Apple Silicon zip from:
+5. Upload the Apple Silicon DMG from:
+
+   ```text
+   out/make/
+   ```
+
+6. Upload the Apple Silicon zip fallback from:
 
    ```text
    out/make/zip/darwin/arm64/
    ```
 
-6. Publish the release.
+7. Publish the release.
 
 ## Friend Install Notes
 
 Because this app is not signed or notarized, macOS may warn on first launch. If so, right-click the app and choose Open.
 
-Updates are notify-only. When the app says an update is available, open the GitHub Release page, download the newest Apple Silicon zip, unzip it, and replace the app in Applications.
+Updates are notify-only. When the app says an update is available, open the GitHub Release page, download the newest Apple Silicon DMG, open it, and replace the app in Applications.
