@@ -16,15 +16,22 @@ If the `.dmg` is unavailable for a release, use the `.zip` fallback: unzip it an
 
 ## First Launch On macOS
 
-This MVP is not signed or notarized yet, so macOS may show a warning the first time you open it.
+This MVP is not signed or notarized yet, so macOS may show a warning the first time you open it. On some Macs, that warning may say the app is damaged and should be moved to the Trash.
 
 If that happens:
 
-1. Open Finder.
-2. Go to Applications.
-3. Right-click `BBYT - Time Audit.app`.
-4. Choose Open.
-5. Confirm you want to open it.
+1. Open Terminal.
+2. Run:
+
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/BBYT - Time Audit.app"
+   ```
+
+3. Open Finder.
+4. Go to Applications.
+5. Right-click `BBYT - Time Audit.app`.
+6. Choose Open.
+7. Confirm you want to open it.
 
 After that first launch, it should open normally.
 

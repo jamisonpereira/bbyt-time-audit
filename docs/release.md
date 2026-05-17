@@ -58,6 +58,14 @@
 
 ## Friend Install Notes
 
-Because this app is not signed or notarized, macOS may warn on first launch. If so, right-click the app and choose Open.
+Because this app is not signed or notarized, macOS may warn on first launch. On some Macs, it may say the app is damaged and should be moved to the Trash.
+
+If that happens, remove the download quarantine flag after copying the app into Applications:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/BBYT - Time Audit.app"
+```
+
+Then right-click the app in Applications and choose Open.
 
 Updates are notify-only. When the app says an update is available, open the GitHub Release page, download the newest Apple Silicon DMG, open it, and replace the app in Applications.
