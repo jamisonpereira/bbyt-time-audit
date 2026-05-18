@@ -1,5 +1,6 @@
 import {
   app,
+  autoUpdater,
   BrowserWindow,
   dialog,
   ipcMain,
@@ -15,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { getMergeSuggestions } from './main/aiMerge';
+import { startAutomaticUpdates } from './main/autoUpdates';
 import { checkLatestRelease } from './main/releaseUpdates';
 import { PromptScheduler } from './main/scheduler';
 import { TimeAuditStore } from './main/store';
@@ -44,6 +46,14 @@ let mergeWindow: BrowserWindow | null = null;
 let scheduler: PromptScheduler;
 let store: TimeAuditStore;
 let isQuitting = false;
+let automaticUpdatesStarted = false;
+let manualAutoUpdateCheck:
+  | {
+      resolve: (result: ReleaseUpdateResult) => void;
+      timeout: NodeJS.Timeout;
+    }
+  | null = null;
+let downloadedUpdateName: string | null = null;
 const appDisplayName = 'BBYT - Time Audit';
 const releaseRepoOwner = 'jamisonpereira';
 const releaseRepoName = 'bbyt-time-audit';
@@ -205,8 +215,12 @@ const refreshTrayMenu = () => {
     ...(latestReleaseCheck.status === 'available'
       ? [
           {
-            label: `Update Available (${latestReleaseCheck.latestVersion})`,
-            click: openLatestRelease,
+            label: downloadedUpdateName
+              ? 'Install Downloaded Update'
+              : `Update Available (${latestReleaseCheck.latestVersion ?? 'downloading'})`,
+            click: automaticUpdatesStarted
+              ? checkForReleaseUpdateWithDialog
+              : openLatestRelease,
           },
         ]
       : [
@@ -311,8 +325,191 @@ const checkForReleaseUpdate = async (): Promise<ReleaseUpdateResult> => {
   return latestReleaseCheck;
 };
 
+const resolveManualAutoUpdateCheck = (result: ReleaseUpdateResult) => {
+  if (!manualAutoUpdateCheck) {
+    return;
+  }
+
+  clearTimeout(manualAutoUpdateCheck.timeout);
+  manualAutoUpdateCheck.resolve(result);
+  manualAutoUpdateCheck = null;
+};
+
+const showDownloadedUpdateDialog = async (
+  releaseName: string | null,
+): Promise<void> => {
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    buttons: ['Restart', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+    title: `${appDisplayName} Update`,
+    message: releaseName ?? 'A new update has been downloaded',
+    detail:
+      'Restart the app to replace it with the downloaded update. You can keep working and restart later if you prefer.',
+  });
+
+  if (response === 0) {
+    isQuitting = true;
+    autoUpdater.quitAndInstall();
+  }
+};
+
+const registerAutoUpdateEvents = () => {
+  autoUpdater.on('checking-for-update', () => {
+    latestReleaseCheck = {
+      status: 'unavailable',
+      currentVersion: app.getVersion(),
+      message: 'Checking for updates...',
+    };
+    refreshTrayMenu();
+  });
+
+  autoUpdater.on('update-available', () => {
+    downloadedUpdateName = null;
+    latestReleaseCheck = {
+      status: 'available',
+      currentVersion: app.getVersion(),
+      message: 'An update is available and is downloading.',
+    };
+    refreshTrayMenu();
+
+    if (manualAutoUpdateCheck) {
+      new Notification({
+        title: `${appDisplayName} update found`,
+        body: 'Downloading the update now. You will be prompted to restart when it is ready.',
+      }).show();
+      resolveManualAutoUpdateCheck(latestReleaseCheck);
+    }
+  });
+
+  autoUpdater.on('update-not-available', async () => {
+    latestReleaseCheck = {
+      status: 'current',
+      currentVersion: app.getVersion(),
+      message: `You are running version ${app.getVersion()}.`,
+    };
+    refreshTrayMenu();
+
+    if (manualAutoUpdateCheck) {
+      await dialog.showMessageBox({
+        type: 'info',
+        message: 'No update available',
+        detail: latestReleaseCheck.message,
+      });
+      resolveManualAutoUpdateCheck(latestReleaseCheck);
+    }
+  });
+
+  autoUpdater.on(
+    'update-downloaded',
+    async (_event, _releaseNotes, releaseName: string) => {
+      downloadedUpdateName = releaseName;
+      latestReleaseCheck = {
+        status: 'available',
+        currentVersion: app.getVersion(),
+        releaseName,
+        message: 'An update has been downloaded and is ready to install.',
+      };
+      refreshTrayMenu();
+      resolveManualAutoUpdateCheck(latestReleaseCheck);
+      await showDownloadedUpdateDialog(releaseName);
+    },
+  );
+
+  autoUpdater.on('error', async (error) => {
+    latestReleaseCheck = {
+      status: 'error',
+      currentVersion: app.getVersion(),
+      message: error instanceof Error ? error.message : 'Update check failed.',
+    };
+    refreshTrayMenu();
+
+    if (manualAutoUpdateCheck) {
+      const { response } = await dialog.showMessageBox({
+        type: 'error',
+        buttons: ['Open Releases', 'OK'],
+        defaultId: 1,
+        cancelId: 1,
+        message: 'Update check failed',
+        detail:
+          latestReleaseCheck.message ??
+          'The automatic update service could not be reached.',
+      });
+
+      resolveManualAutoUpdateCheck(latestReleaseCheck);
+
+      if (response === 0) {
+        await openLatestRelease();
+      }
+    }
+  });
+};
+
+const checkForAutomaticUpdateWithDialog =
+  async (): Promise<ReleaseUpdateResult> => {
+    if (downloadedUpdateName) {
+      await showDownloadedUpdateDialog(downloadedUpdateName);
+      return latestReleaseCheck;
+    }
+
+    if (manualAutoUpdateCheck) {
+      return new Promise((resolve) => {
+        const originalResolve = manualAutoUpdateCheck?.resolve;
+        if (!manualAutoUpdateCheck || !originalResolve) {
+          resolve(latestReleaseCheck);
+          return;
+        }
+
+        manualAutoUpdateCheck.resolve = (result) => {
+          originalResolve(result);
+          resolve(result);
+        };
+      });
+    }
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(async () => {
+        const result: ReleaseUpdateResult = {
+          status: 'error',
+          currentVersion: app.getVersion(),
+          message: 'The update check did not finish within 60 seconds.',
+        };
+        latestReleaseCheck = result;
+        refreshTrayMenu();
+        resolveManualAutoUpdateCheck(result);
+        await dialog.showMessageBox({
+          type: 'error',
+          message: 'Update check timed out',
+          detail:
+            'The update service did not respond quickly enough. Try again in a minute.',
+        });
+      }, 60000);
+
+      manualAutoUpdateCheck = { resolve, timeout };
+
+      try {
+        autoUpdater.checkForUpdates();
+      } catch (error) {
+        const result: ReleaseUpdateResult = {
+          status: 'error',
+          currentVersion: app.getVersion(),
+          message:
+            error instanceof Error ? error.message : 'Update check failed.',
+        };
+        latestReleaseCheck = result;
+        refreshTrayMenu();
+        resolveManualAutoUpdateCheck(result);
+      }
+    });
+  };
+
 const checkForReleaseUpdateWithDialog =
   async (): Promise<ReleaseUpdateResult> => {
+    if (automaticUpdatesStarted) {
+      return checkForAutomaticUpdateWithDialog();
+    }
+
     const result = await checkForReleaseUpdate();
     await dialog.showMessageBox({
       type: result.status === 'error' ? 'error' : 'info',
@@ -613,16 +810,24 @@ app.on('ready', () => {
   registerIpc();
   applyLaunchAtLogin();
   createTray();
-  setTimeout(() => {
-    checkForReleaseUpdate().catch((error) => {
-      latestReleaseCheck = {
-        status: 'error',
-        currentVersion: app.getVersion(),
-        message: error instanceof Error ? error.message : 'Update check failed.',
-      };
-      refreshTrayMenu();
-    });
-  }, 5000);
+  registerAutoUpdateEvents();
+  automaticUpdatesStarted = startAutomaticUpdates({
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+  });
+  if (!automaticUpdatesStarted) {
+    setTimeout(() => {
+      checkForReleaseUpdate().catch((error) => {
+        latestReleaseCheck = {
+          status: 'error',
+          currentVersion: app.getVersion(),
+          message:
+            error instanceof Error ? error.message : 'Update check failed.',
+        };
+        refreshTrayMenu();
+      });
+    }, 5000);
+  }
   scheduler = new PromptScheduler({
     store,
     showPrompt: showPromptWindow,

@@ -1,0 +1,36 @@
+const assert = require('node:assert/strict');
+
+async function main() {
+  const {
+    automaticUpdateRepo,
+    createAutoUpdateOptions,
+    shouldUseAutomaticUpdates,
+  } = await import('../dist-test/auto-updates/autoUpdates.mjs');
+
+  assert.equal(automaticUpdateRepo, 'jamisonpereira/bbyt-time-audit');
+
+  assert.equal(
+    shouldUseAutomaticUpdates({ isPackaged: true, platform: 'darwin' }),
+    true,
+  );
+  assert.equal(
+    shouldUseAutomaticUpdates({ isPackaged: false, platform: 'darwin' }),
+    false,
+  );
+  assert.equal(
+    shouldUseAutomaticUpdates({ isPackaged: true, platform: 'linux' }),
+    false,
+  );
+
+  const options = createAutoUpdateOptions();
+  assert.equal(options.updateSource.repo, automaticUpdateRepo);
+  assert.equal(options.updateInterval, '1 hour');
+  assert.equal(options.notifyUser, false);
+
+  console.log('auto update tests passed');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

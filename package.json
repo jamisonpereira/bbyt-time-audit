@@ -16,6 +16,7 @@
     "lint": "eslint --ext .ts,.tsx .",
     "test:store": "vite build --ssr src/main/store.ts --outDir dist-test/store --emptyOutDir && node tests/store.test.js",
     "test:ai-merge": "vite build --ssr src/main/aiMerge.ts --outDir dist-test/ai-merge --emptyOutDir && node tests/aiMerge.test.js",
+    "test:auto-updates": "vite build --ssr src/main/autoUpdates.ts --outDir dist-test/auto-updates --emptyOutDir && node tests/autoUpdates.test.js",
     "test:release-updates": "vite build --ssr src/main/releaseUpdates.ts --outDir dist-test/release-updates --emptyOutDir && node tests/releaseUpdates.test.js"
   },
   "keywords": [],
@@ -58,6 +59,7 @@
   "dependencies": {
     "electron-squirrel-startup": "^1.0.1",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "update-electron-app": "^3.2.0"
   }
 }
