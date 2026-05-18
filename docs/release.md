@@ -18,6 +18,25 @@
    git push -u origin main
    ```
 
+## One-Time Signing And Notarization Setup
+
+The release build uses the Developer ID certificate:
+
+```text
+Developer ID Application: Jamison Pereira (75Q9KX77JX)
+```
+
+Store Apple notarization credentials in your local keychain before making signed releases:
+
+```bash
+xcrun notarytool store-credentials "bbyt-time-audit-notary" \
+  --apple-id "jamison.pereira@gmail.com" \
+  --team-id "75Q9KX77JX" \
+  --password "<app-specific-password>"
+```
+
+Do not commit the app-specific password. If it has been exposed, revoke it at appleid.apple.com and create a replacement.
+
 ## Create A New Release
 
 1. Bump the version:
@@ -31,7 +50,13 @@
 2. Build the Mac artifact:
 
    ```bash
-   npm run make
+   npm run make:signed
+   ```
+
+   Signed release artifacts are copied to:
+
+   ```text
+   out/signed-release/
    ```
 
 3. Push the version commit and tag:
@@ -45,13 +70,13 @@
 5. Upload the Apple Silicon DMG from:
 
    ```text
-   out/make/
+   out/signed-release/
    ```
 
 6. Upload the Apple Silicon zip fallback from:
 
    ```text
-   out/make/zip/darwin/arm64/
+   out/signed-release/
    ```
 
 7. Publish the release.

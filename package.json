@@ -11,6 +11,7 @@
     "install:mac": "npm run package && bash scripts/install-mac.sh system",
     "install:mac:user": "npm run package && bash scripts/install-mac.sh user",
     "make": "electron-forge make",
+    "make:signed": "bash scripts/make-signed-release.sh",
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
     "test:store": "vite build --ssr src/main/store.ts --outDir dist-test/store --emptyOutDir && node tests/store.test.js",

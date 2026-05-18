@@ -8,9 +8,34 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
+const signingIdentity =
+  process.env.APPLE_SIGNING_IDENTITY ??
+  'Developer ID Application: Jamison Pereira (75Q9KX77JX)';
+
+const notarizeConfig = process.env.APPLE_NOTARY_KEYCHAIN_PROFILE
+  ? {
+      tool: 'notarytool' as const,
+      keychainProfile: process.env.APPLE_NOTARY_KEYCHAIN_PROFILE,
+    }
+  : process.env.APPLE_ID &&
+      process.env.APPLE_APP_SPECIFIC_PASSWORD &&
+      process.env.APPLE_TEAM_ID
+    ? {
+        tool: 'notarytool' as const,
+        appleId: process.env.APPLE_ID,
+        appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
+        teamId: process.env.APPLE_TEAM_ID,
+      }
+    : undefined;
+
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    appBundleId: 'com.jamisonpereira.bbyt-time-audit',
+    osxSign: {
+      identity: signingIdentity,
+    },
+    ...(notarizeConfig ? { osxNotarize: notarizeConfig } : {}),
   },
   rebuildConfig: {},
   makers: [

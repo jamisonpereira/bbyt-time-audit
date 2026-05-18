@@ -80,4 +80,12 @@ Build the Mac release artifact:
 npm run make
 ```
 
+Build a signed and notarized Mac release after configuring the local Apple notarization keychain profile:
+
+```bash
+npm run make:signed
+```
+
+Signed release artifacts are copied to `out/signed-release/`.
+
 Release maintenance notes live in [docs/release.md](docs/release.md).
