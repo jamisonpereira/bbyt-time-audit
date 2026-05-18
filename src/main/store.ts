@@ -8,6 +8,8 @@ import type {
   AuditData,
   Category,
   CategoryMergeInput,
+  CategoryMoveInput,
+  CategoryReorderInput,
   CategoryRenameInput,
   CategoryValueInput,
   CategoryValueTier,
@@ -53,6 +55,7 @@ const defaultData: AuditData = {
   entries: [],
   categories: [],
   aliases: [],
+  mergeUndo: undefined,
 };
 
 export class TimeAuditStore {
@@ -374,6 +377,57 @@ export class TimeAuditStore {
     return this.getSummary();
   }
 
+  moveCategory(input: CategoryMoveInput): SummaryState {
+    const ordered = [...this.data.categories].sort(compareCategoryOrder);
+    const index = ordered.findIndex((category) => category.id === input.categoryId);
+    const nextIndex = input.direction === 'up' ? index - 1 : index + 1;
+
+    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) {
+      return this.getSummary();
+    }
+
+    const [category] = ordered.splice(index, 1);
+    ordered.splice(nextIndex, 0, category);
+    ordered.forEach((candidate, sortOrder) => {
+      candidate.sortOrder = sortOrder;
+    });
+    this.save();
+    return this.getSummary();
+  }
+
+  reorderCategory(input: CategoryReorderInput): SummaryState {
+    if (input.sourceCategoryId === input.targetCategoryId) {
+      return this.getSummary();
+    }
+
+    const ordered = [...this.data.categories].sort(compareCategoryOrder);
+    const sourceIndex = ordered.findIndex(
+      (category) => category.id === input.sourceCategoryId,
+    );
+
+    if (sourceIndex < 0) {
+      return this.getSummary();
+    }
+
+    const [source] = ordered.splice(sourceIndex, 1);
+    const targetIndex = ordered.findIndex(
+      (category) => category.id === input.targetCategoryId,
+    );
+
+    if (targetIndex < 0) {
+      return this.getSummary();
+    }
+
+    const insertIndex =
+      input.position === 'before' ? targetIndex : targetIndex + 1;
+    ordered.splice(insertIndex, 0, source);
+    ordered.forEach((category, sortOrder) => {
+      category.sortOrder = sortOrder;
+    });
+    this.save();
+    return this.getSummary();
+  }
+
   addManualEntry(input: ManualEntryInput): SummaryState {
     const label = input.label.trim();
     const startAt = parseLocalDateTime(input.date, input.startTime);
@@ -521,6 +575,7 @@ export class TimeAuditStore {
       pendingBlocks: this.getPendingBlockReviewItems(),
       auditStartedAt: this.data.createdAt,
       previousFilledLabel: this.getPreviousFilledLabel(),
+      canUndoMerge: Boolean(this.data.mergeUndo),
     };
   }
 
@@ -587,8 +642,6 @@ export class TimeAuditStore {
         'hours',
         'percent',
         'value_tier',
-        'hourly_rate',
-        'estimated_value',
       ],
     ];
 
@@ -600,8 +653,6 @@ export class TimeAuditStore {
         String(Math.round((row.minutes / 60) * 100) / 100),
         String(row.percent),
         row.valueTier ?? '',
-        row.hourlyRate === undefined ? '' : String(row.hourlyRate),
-        String(row.estimatedValue),
       ]);
     }
 
@@ -609,6 +660,10 @@ export class TimeAuditStore {
   }
 
   applyMergeSuggestions(suggestions: MergeSuggestion[]): SummaryState {
+    if (suggestions.length > 0) {
+      this.data.mergeUndo = this.createMergeUndoSnapshot();
+    }
+
     for (const suggestion of suggestions) {
       const canonical = suggestion.canonical.trim();
       if (!canonical) {
@@ -652,6 +707,32 @@ export class TimeAuditStore {
     return this.getSummary();
   }
 
+  undoLastMerge(): SummaryState {
+    const snapshot = this.data.mergeUndo;
+    if (!snapshot) {
+      return this.getSummary();
+    }
+
+    const categoryIds = new Set(snapshot.categories.map((category) => category.id));
+    const categoryIdByEntryId = new Map(
+      snapshot.entryCategoryIds.map((entry) => [entry.entryId, entry.categoryId]),
+    );
+
+    this.data.categories = deepClone(snapshot.categories);
+    this.data.aliases = deepClone(snapshot.aliases);
+    for (const entry of this.data.entries) {
+      const categoryId = categoryIdByEntryId.get(entry.id);
+      if (categoryId && categoryIds.has(categoryId)) {
+        entry.categoryId = categoryId;
+      }
+    }
+
+    this.data.mergeUndo = undefined;
+    this.recalculateCategoryUsage();
+    this.save();
+    return this.getSummary();
+  }
+
   private findOrCreateCategory(label: string): Category {
     const normalized = normalizeLabel(label);
     const alias = this.data.aliases.find(
@@ -676,6 +757,7 @@ export class TimeAuditStore {
       normalizedName: normalized,
       useCount: 1,
       lastUsedAt: new Date().toISOString(),
+      sortOrder: this.data.categories.length,
     };
     this.data.categories.push(category);
     return category;
@@ -697,6 +779,18 @@ export class TimeAuditStore {
       normalizedRaw,
       categoryId,
     });
+  }
+
+  private createMergeUndoSnapshot(): AuditData['mergeUndo'] {
+    return {
+      createdAt: new Date().toISOString(),
+      categories: deepClone(this.data.categories),
+      aliases: deepClone(this.data.aliases),
+      entryCategoryIds: this.data.entries.map((entry) => ({
+        entryId: entry.id,
+        categoryId: entry.categoryId,
+      })),
+    };
   }
 
   private recalculateCategoryUsage(): void {
@@ -853,21 +947,34 @@ function normalizeData(input: AuditData): AuditData {
     version: 1,
     createdAt: input.createdAt ?? new Date().toISOString(),
     settings: normalizeSettings(input.settings ?? defaultSettings),
-    blocks: input.blocks ?? [],
-    entries: input.entries ?? [],
+    blocks: deepClone(input.blocks ?? []),
+    entries: deepClone(input.entries ?? []),
     categories: normalizeCategories(input.categories ?? []),
-    aliases: input.aliases ?? [],
+    aliases: deepClone(input.aliases ?? []),
+    mergeUndo: input.mergeUndo ? deepClone(input.mergeUndo) : undefined,
   };
 }
 
 function normalizeCategories(categories: Category[]): Category[] {
-  return categories.map((category) => ({
+  return categories.map((category, index) => ({
     ...category,
     valueTier: isCategoryValueTier(category.valueTier)
       ? category.valueTier
       : undefined,
     hourlyRate: normalizeHourlyRate(category.hourlyRate),
+    sortOrder:
+      typeof category.sortOrder === 'number' && Number.isFinite(category.sortOrder)
+        ? category.sortOrder
+        : index,
   }));
+}
+
+function compareCategoryOrder(a: Category, b: Category): number {
+  return (
+    (a.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+      (b.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
+    a.name.localeCompare(b.name)
+  );
 }
 
 function isCategoryValueTier(
@@ -1012,12 +1119,13 @@ function buildAuditReport(
         scope: getCategoryScope(row.categoryName),
         minutes: row.minutes,
         percent: row.percent,
-        valueTier: category?.valueTier,
-        hourlyRate,
-        estimatedValue,
-      };
-    })
-    .sort((a, b) => b.minutes - a.minutes);
+      valueTier: category?.valueTier,
+      hourlyRate,
+      estimatedValue,
+      sortOrder: category?.sortOrder ?? Number.MAX_SAFE_INTEGER,
+    };
+  })
+    .sort((a, b) => a.sortOrder - b.sortOrder || b.minutes - a.minutes);
 
   return {
     rows: reportRows,
@@ -1114,6 +1222,10 @@ function createId(prefix: string): string {
 
 function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
+}
+
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function clamp(value: number, min: number, max: number): number {

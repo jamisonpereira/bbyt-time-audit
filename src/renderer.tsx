@@ -37,6 +37,20 @@ const valueTierOptions: Array<{ value: CategoryValueTier; label: string }> = [
   { value: '$$$$', label: '$$$$' },
 ];
 
+type ReportSortColumn = 'time' | 'tier' | 'name';
+
+type ReportDropTarget = {
+  categoryId: string;
+  action: 'before' | 'after' | 'merge';
+};
+
+type ReportDragState = {
+  categoryId: string;
+  startX: number;
+  startY: number;
+  isDragging: boolean;
+};
+
 const mode = (new URLSearchParams(window.location.search).get('mode') ??
   'summary') as AppMode;
 const appDisplayName = 'BBYT - Time Audit';
@@ -407,7 +421,6 @@ function SummaryView() {
   const [summary, setSummary] = useState<SummaryState | null>(null);
   const [dataPath, setDataPath] = useState('');
   const [archives, setArchives] = useState<ArchiveInfo[]>([]);
-  const [updateMessage, setUpdateMessage] = useState('');
   const [fileMessage, setFileMessage] = useState('');
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [releaseUpdate, setReleaseUpdate] =
@@ -444,22 +457,12 @@ function SummaryView() {
             disabled={checkingUpdate}
             onClick={async () => {
               setCheckingUpdate(true);
-              setUpdateMessage('Checking for updates...');
-              const result = await window.jamosTime.checkForUpdates();
-              setReleaseUpdate(result);
-              setCheckingUpdate(false);
-
-              if (result.status === 'available') {
-                setUpdateMessage(
-                  `Version ${result.latestVersion} is available.`,
-                );
-                await window.jamosTime.openLatestRelease();
-                return;
+              try {
+                const result = await window.jamosTime.checkForUpdatesWithDialog();
+                setReleaseUpdate(result);
+              } finally {
+                setCheckingUpdate(false);
               }
-
-              setUpdateMessage(
-                result.message ?? `You are running version ${result.currentVersion}.`,
-              );
             }}
           >
             {checkingUpdate
@@ -533,7 +536,6 @@ function SummaryView() {
         </div>
       </section>
 
-      {updateMessage ? <div className="notice">{updateMessage}</div> : null}
       {fileMessage ? <div className="notice">{fileMessage}</div> : null}
 
       <AccordionSection defaultOpen title="Missed blocks">
@@ -577,6 +579,10 @@ function SummaryView() {
           }}
           onMergeCategories={async (input) => {
             const next = await window.jamosTime.mergeCategories(input);
+            setSummary(next);
+          }}
+          onReorderCategory={async (input) => {
+            const next = await window.jamosTime.reorderCategory(input);
             setSummary(next);
           }}
         />
@@ -667,12 +673,20 @@ function AccordionSection({
 function MergeView() {
   const [suggestions, setSuggestions] = useState<MergeSuggestion[] | null>(null);
   const [error, setError] = useState('');
+  const [selectedSuggestions, setSelectedSuggestions] = useState<string[]>([]);
+  const [canUndoMerge, setCanUndoMerge] = useState(false);
 
   const load = async () => {
     setError('');
     setSuggestions(null);
     try {
-      setSuggestions(await window.jamosTime.suggestMerges());
+      const [nextSuggestions, summary] = await Promise.all([
+        window.jamosTime.suggestMerges(),
+        window.jamosTime.getSummary(),
+      ]);
+      setSuggestions(nextSuggestions);
+      setSelectedSuggestions(nextSuggestions.map(mergeSuggestionKey));
+      setCanUndoMerge(summary.canUndoMerge);
     } catch (innerError) {
       setError(innerError instanceof Error ? innerError.message : 'Merge failed');
       setSuggestions([]);
@@ -690,7 +704,18 @@ function MergeView() {
           <div className="eyebrow">AI Merge</div>
           <h1>Review Categories</h1>
         </div>
-        <button onClick={load}>Retry</button>
+        <div className="header-actions">
+          <button
+            disabled={!canUndoMerge}
+            onClick={async () => {
+              const summary = await window.jamosTime.undoLastMerge();
+              setCanUndoMerge(summary.canUndoMerge);
+            }}
+          >
+            Undo Last Merge
+          </button>
+          <button onClick={load}>Retry</button>
+        </div>
       </header>
 
       {error ? <div className="error">{error}</div> : null}
@@ -702,7 +727,23 @@ function MergeView() {
         <section className="panel">
           {suggestions.map((suggestion) => (
             <div className="merge-card" key={suggestion.canonical}>
-              <h2>{suggestion.canonical}</h2>
+              <label className="merge-select-row">
+                <input
+                  checked={selectedSuggestions.includes(
+                    mergeSuggestionKey(suggestion),
+                  )}
+                  type="checkbox"
+                  onChange={(event) => {
+                    const key = mergeSuggestionKey(suggestion);
+                    setSelectedSuggestions((current) =>
+                      event.target.checked
+                        ? [...current, key]
+                        : current.filter((candidate) => candidate !== key),
+                    );
+                  }}
+                />
+                <h2>{suggestion.canonical}</h2>
+              </label>
               {suggestion.action || suggestion.rationale ? (
                 <div className="merge-guidance">
                   {suggestion.action ? <strong>{suggestion.action}</strong> : null}
@@ -720,12 +761,17 @@ function MergeView() {
           ))}
           <button
             className="primary"
+            disabled={selectedSuggestions.length === 0}
             onClick={async () => {
-              await window.jamosTime.applyMerges(suggestions);
+              await window.jamosTime.applyMerges(
+                suggestions.filter((suggestion) =>
+                  selectedSuggestions.includes(mergeSuggestionKey(suggestion)),
+                ),
+              );
               window.close();
             }}
           >
-            Apply Merges
+            Apply Selected Merges
           </button>
         </section>
       ) : null}
@@ -772,6 +818,7 @@ function AuditReportView({
   onUpdateValue,
   onRenameCategory,
   onMergeCategories,
+  onReorderCategory,
 }: {
   report: SummaryState['auditReport'];
   onExport: () => Promise<string | null>;
@@ -785,25 +832,145 @@ function AuditReportView({
     sourceCategoryId: string;
     targetCategoryId: string;
   }) => Promise<void>;
+  onReorderCategory: (input: {
+    sourceCategoryId: string;
+    targetCategoryId: string;
+    position: 'before' | 'after';
+  }) => Promise<void>;
 }) {
-  const [sortBy, setSortBy] = useState<'time' | 'value' | 'tier' | 'name'>('time');
+  const [sortBy, setSortBy] = useState<'order' | 'time' | 'tier' | 'name'>('order');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const pointerDragRef = useRef<ReportDragState | null>(null);
+  const [dropTarget, setDropTarget] = useState<ReportDropTarget | null>(null);
+  const dropTargetRef = useRef<ReportDropTarget | null>(null);
   const rows = useMemo(() => {
     return [...report.rows].sort((a, b) => {
-      if (sortBy === 'value') {
-        return b.estimatedValue - a.estimatedValue;
-      }
-
+      let comparison = 0;
       if (sortBy === 'tier') {
-        return tierScore(b.valueTier) - tierScore(a.valueTier);
+        comparison = tierScore(a.valueTier) - tierScore(b.valueTier);
+      } else if (sortBy === 'name') {
+        comparison = a.categoryName.localeCompare(b.categoryName);
+      } else if (sortBy === 'time') {
+        comparison = a.minutes - b.minutes;
+      } else {
+        comparison = a.sortOrder - b.sortOrder || b.minutes - a.minutes;
       }
 
-      if (sortBy === 'name') {
-        return a.categoryName.localeCompare(b.categoryName);
-      }
-
-      return b.minutes - a.minutes;
+      return sortDirection === 'asc' ? comparison : -comparison;
     });
-  }, [report.rows, sortBy]);
+  }, [report.rows, sortBy, sortDirection]);
+
+  const toggleSort = (nextSortBy: ReportSortColumn) => {
+    if (sortBy === nextSortBy) {
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+
+    setSortBy(nextSortBy);
+    setSortDirection(nextSortBy === 'name' ? 'asc' : 'desc');
+  };
+
+  const finishDrop = async (
+    sourceCategoryId: string,
+    target: ReportDropTarget | null,
+  ) => {
+    if (!target || sourceCategoryId === target.categoryId) {
+      return;
+    }
+
+    const targetRow = rows.find((row) => row.categoryId === target.categoryId);
+    if (!targetRow) {
+      return;
+    }
+
+    if (target.action === 'merge') {
+      const confirmed = window.confirm(`Merge with ${targetRow.categoryName}?`);
+      if (!confirmed) {
+        return;
+      }
+
+      await onMergeCategories({
+        sourceCategoryId,
+        targetCategoryId: target.categoryId,
+      });
+      return;
+    }
+
+    await onReorderCategory({
+      sourceCategoryId,
+      targetCategoryId: target.categoryId,
+      position: target.action,
+    });
+  };
+
+  const clearActiveDrag = () => {
+    pointerDragRef.current = null;
+    dropTargetRef.current = null;
+    setDraggingId(null);
+    setDropTarget(null);
+  };
+
+  const updateActiveDrag = (clientX: number, clientY: number) => {
+    const activeDrag = pointerDragRef.current;
+    if (!activeDrag) {
+      return;
+    }
+
+    const moved =
+      Math.abs(clientX - activeDrag.startX) > 3 ||
+      Math.abs(clientY - activeDrag.startY) > 3;
+    if (!moved && !activeDrag.isDragging) {
+      return;
+    }
+
+    if (!activeDrag.isDragging) {
+      setSortBy('order');
+      setSortDirection('asc');
+      activeDrag.isDragging = true;
+    }
+
+    const nextTarget = getReportDropTarget(clientX, clientY, activeDrag.categoryId);
+    dropTargetRef.current = nextTarget;
+    setDropTarget(nextTarget);
+  };
+
+  const endActiveDrag = async (clientX: number, clientY: number) => {
+    const activeDrag = pointerDragRef.current;
+    if (!activeDrag) {
+      return;
+    }
+
+    const target =
+      getReportDropTarget(clientX, clientY, activeDrag.categoryId) ??
+      dropTargetRef.current;
+    const sourceCategoryId = activeDrag.categoryId;
+    const shouldFinishDrop = activeDrag.isDragging;
+    clearActiveDrag();
+    if (shouldFinishDrop) {
+      await finishDrop(sourceCategoryId, target);
+    }
+  };
+
+  useEffect(() => {
+    if (!draggingId) {
+      return undefined;
+    }
+
+    const onWindowPointerMove = (event: PointerEvent) => {
+      updateActiveDrag(event.clientX, event.clientY);
+    };
+    const onWindowPointerUp = (event: PointerEvent) => {
+      void endActiveDrag(event.clientX, event.clientY);
+    };
+
+    window.addEventListener('pointermove', onWindowPointerMove, true);
+    window.addEventListener('pointerup', onWindowPointerUp, true);
+    return () => {
+      window.removeEventListener('pointermove', onWindowPointerMove, true);
+      window.removeEventListener('pointerup', onWindowPointerUp, true);
+    };
+  }, [draggingId]);
 
   if (rows.length === 0) {
     return <div className="empty">No filled blocks yet.</div>;
@@ -816,24 +983,7 @@ function AuditReportView({
           <span>Total time</span>
           <strong>{formatMinutes(report.totalMinutes)}</strong>
         </div>
-        <div className="report-metric">
-          <span>Estimated value</span>
-          <strong>{formatCurrency(report.totalEstimatedValue)}</strong>
-        </div>
-        <label>
-          Sort
-          <select
-            value={sortBy}
-            onChange={(event) =>
-              setSortBy(event.target.value as 'time' | 'value' | 'tier' | 'name')
-            }
-          >
-            <option value="time">Time spent</option>
-            <option value="value">Estimated value</option>
-            <option value="tier">Dollar tier</option>
-            <option value="name">Category name</option>
-          </select>
-        </label>
+        <button onClick={() => setSortBy('order')}>Custom Order</button>
         <button onClick={() => onExport()}>Export Report CSV</button>
       </div>
 
@@ -842,9 +992,7 @@ function AuditReportView({
           <div className="scope-total" key={scopeTotal.scope}>
             <span>{scopeTotal.scope}</span>
             <strong>{formatMinutes(scopeTotal.minutes)}</strong>
-            <small>
-              {scopeTotal.percent}% · {formatCurrency(scopeTotal.estimatedValue)}
-            </small>
+            <small>{scopeTotal.percent}%</small>
           </div>
         ))}
       </div>
@@ -856,8 +1004,89 @@ function AuditReportView({
       />
 
       <div className="report-chart">
+        <div className="report-header-row">
+          <span />
+          <button
+            className={`report-sort-button ${sortBy === 'name' ? 'active' : ''}`}
+            onClick={() => toggleSort('name')}
+            title={`Category is ${sortDescription(sortBy, sortDirection, 'name')}`}
+          >
+            <span>Category</span>
+            <SortIcon column="name" direction={sortDirection} sortBy={sortBy} />
+          </button>
+          <button
+            className={`report-sort-button ${sortBy === 'time' ? 'active' : ''}`}
+            onClick={() => toggleSort('time')}
+            title={`Time is ${sortDescription(sortBy, sortDirection, 'time')}`}
+          >
+            <span>Time</span>
+            <SortIcon column="time" direction={sortDirection} sortBy={sortBy} />
+          </button>
+          <button
+            className={`report-sort-button ${sortBy === 'tier' ? 'active' : ''}`}
+            onClick={() => toggleSort('tier')}
+            title={`Dollar tier is ${sortDescription(sortBy, sortDirection, 'tier')}`}
+          >
+            <span>$</span>
+            <SortIcon column="tier" direction={sortDirection} sortBy={sortBy} />
+          </button>
+        </div>
         {rows.map((row) => (
-          <div className="report-row" key={row.categoryId}>
+          <div
+            className={`report-row ${
+              dropTarget?.categoryId === row.categoryId
+                ? `drop-${dropTarget.action}`
+                : ''
+            }`}
+            data-report-row-id={row.categoryId}
+            key={row.categoryId}
+          >
+            <button
+              aria-label={`Drag ${row.categoryName}`}
+              className="drag-handle"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.currentTarget.setPointerCapture(event.pointerId);
+                const nextDrag = {
+                  categoryId: row.categoryId,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  isDragging: false,
+                };
+                pointerDragRef.current = nextDrag;
+                dropTargetRef.current = null;
+                setDropTarget(null);
+                setDraggingId(row.categoryId);
+              }}
+              onPointerMove={(event) => {
+                updateActiveDrag(event.clientX, event.clientY);
+              }}
+              onPointerUp={async (event) => {
+                const activeDrag = pointerDragRef.current;
+                if (!activeDrag || activeDrag.categoryId !== row.categoryId) {
+                  return;
+                }
+
+                event.preventDefault();
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+
+                await endActiveDrag(event.clientX, event.clientY);
+              }}
+              onPointerCancel={() => {
+                clearActiveDrag();
+              }}
+              title="Drag to reorder. Drop on the middle of another row to merge."
+              type="button"
+            >
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
+              <span />
+            </button>
             <div className="report-label">
               <strong>{row.categoryName}</strong>
               <span>
@@ -872,47 +1101,28 @@ function AuditReportView({
                 }}
               />
             </div>
-            <select
-              aria-label={`Value tier for ${row.categoryName}`}
-              value={row.valueTier ?? ''}
-              onChange={async (event) => {
-                const value = event.target.value as CategoryValueTier | '';
-                await onUpdateValue({
-                  categoryId: row.categoryId,
-                  valueTier: value || undefined,
-                });
-              }}
-            >
-              <option value="">No tier</option>
+            <div className="tier-button-row" aria-label={`Value tier for ${row.categoryName}`}>
               {valueTierOptions.map((option) => (
-                <option key={option.value} value={option.value}>
+                <button
+                  className={row.valueTier === option.value ? 'selected' : ''}
+                  key={option.value}
+                  onClick={() =>
+                    onUpdateValue({
+                      categoryId: row.categoryId,
+                      valueTier:
+                        row.valueTier === option.value ? undefined : option.value,
+                    })
+                  }
+                >
                   {option.label}
-                </option>
+                </button>
               ))}
-            </select>
-            <label className="rate-field">
-              $/hr
-              <input
-                key={`${row.categoryId}-${row.hourlyRate ?? 'none'}`}
-                type="number"
-                min="0"
-                step="1"
-                defaultValue={row.hourlyRate ?? ''}
-                onBlur={async (event) => {
-                  await onUpdateValue({
-                    categoryId: row.categoryId,
-                    valueTier: row.valueTier,
-                    hourlyRate:
-                      event.target.value === ''
-                        ? undefined
-                        : Number(event.target.value),
-                  });
-                }}
-              />
-            </label>
-            <strong className="report-value">
-              {formatCurrency(row.estimatedValue)}
-            </strong>
+            </div>
+            {dropTarget?.categoryId === row.categoryId &&
+            dropTarget.action === 'merge' &&
+            draggingId !== row.categoryId ? (
+              <div className="merge-tooltip">Merge with {row.categoryName}?</div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -1535,14 +1745,6 @@ function formatMinutes(minutes: number): string {
   return `${hours}h ${remainder}m`;
 }
 
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: value % 1 === 0 ? 0 : 2,
-  }).format(value);
-}
-
 function tierScore(value: CategoryValueTier | undefined): number {
   if (value === '$$$$') {
     return 4;
@@ -1561,6 +1763,63 @@ function tierScore(value: CategoryValueTier | undefined): number {
   }
 
   return 0;
+}
+
+function SortIcon({
+  sortBy,
+  direction,
+  column,
+}: {
+  sortBy: 'order' | 'time' | 'tier' | 'name';
+  direction: 'asc' | 'desc';
+  column: ReportSortColumn;
+}) {
+  const state =
+    sortBy !== column ? 'none' : direction === 'asc' ? 'ascending' : 'descending';
+
+  return (
+    <span aria-hidden="true" className={`sort-icon ${state}`}>
+      <span className="sort-chevron up" />
+      <span className="sort-chevron down" />
+    </span>
+  );
+}
+
+function sortDescription(
+  sortBy: 'order' | 'time' | 'tier' | 'name',
+  direction: 'asc' | 'desc',
+  column: ReportSortColumn,
+): string {
+  if (sortBy !== column) {
+    return 'not sorted';
+  }
+
+  return direction === 'asc' ? 'sorted ascending' : 'sorted descending';
+}
+
+function mergeSuggestionKey(suggestion: MergeSuggestion): string {
+  return `${suggestion.canonical}:${suggestion.labels.join('|')}`;
+}
+
+function getReportDropTarget(
+  clientX: number,
+  clientY: number,
+  sourceCategoryId: string,
+): { categoryId: string; action: 'before' | 'after' | 'merge' } | null {
+  const rowElement = document
+    .elementsFromPoint(clientX, clientY)
+    .map((element) => element.closest('[data-report-row-id]') as HTMLElement | null)
+    .find((element): element is HTMLElement => Boolean(element));
+
+  const categoryId = rowElement?.dataset.reportRowId;
+  if (!rowElement || !categoryId || categoryId === sourceCategoryId) {
+    return null;
+  }
+
+  const rect = rowElement.getBoundingClientRect();
+  const position = (clientY - rect.top) / rect.height;
+  const action = position < 0.3 ? 'before' : position > 0.7 ? 'after' : 'merge';
+  return { categoryId, action };
 }
 
 function addMinutes(date: Date, minutes: number): Date {

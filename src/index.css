@@ -561,7 +561,7 @@ button:disabled {
 
 .report-toolbar {
   display: grid;
-  grid-template-columns: 150px 180px 170px auto;
+  grid-template-columns: 150px 170px auto;
   align-items: end;
   gap: 12px;
 }
@@ -640,17 +640,83 @@ button:disabled {
 }
 
 .report-row {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1.3fr) 96px 92px 88px;
+  grid-template-columns: 34px minmax(180px, 1fr) minmax(180px, 1.3fr) auto;
   align-items: center;
   gap: 12px;
   border-top: 1px solid #eee6dc;
   padding-top: 10px;
+  user-select: none;
 }
 
-.report-row:first-child {
-  border-top: 0;
-  padding-top: 0;
+.report-header-row {
+  display: grid;
+  grid-template-columns: 34px minmax(180px, 1fr) minmax(180px, 1.3fr) auto;
+  gap: 12px;
+  border-bottom: 1px solid #ded7cc;
+  padding-bottom: 8px;
+}
+
+.report-header-row button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #4d5753;
+  font-weight: 800;
+}
+
+.report-header-row button:hover {
+  color: #1d2320;
+}
+
+.report-sort-button {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  min-height: 28px;
+  cursor: pointer;
+}
+
+.report-sort-button.active {
+  color: #2f5f4f;
+}
+
+.sort-icon {
+  display: inline-grid;
+  width: 14px;
+  height: 16px;
+  align-items: center;
+  justify-items: center;
+}
+
+.sort-chevron {
+  width: 0;
+  height: 0;
+  opacity: 0.36;
+}
+
+.sort-chevron.up {
+  border-right: 4px solid transparent;
+  border-bottom: 5px solid currentColor;
+  border-left: 4px solid transparent;
+}
+
+.sort-chevron.down {
+  border-top: 5px solid currentColor;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.sort-icon.ascending .sort-chevron.up,
+.sort-icon.descending .sort-chevron.down {
+  opacity: 1;
+}
+
+.sort-icon.ascending .sort-chevron.down,
+.sort-icon.descending .sort-chevron.up {
+  opacity: 0.18;
 }
 
 .report-label {
@@ -688,19 +754,90 @@ button:disabled {
   background: #7b8794;
 }
 
-.rate-field {
-  gap: 3px;
-  color: #6a746f;
-  font-size: 0.76rem;
+.tier-button-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.rate-field input {
+.tier-button-row button {
+  min-width: 42px;
+  padding: 0 8px;
+}
+
+.drag-handle {
+  display: grid;
+  grid-template-columns: repeat(2, 4px);
+  grid-template-rows: repeat(3, 4px);
+  place-content: center;
+  gap: 4px;
+  width: 32px;
   min-height: 34px;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  padding: 0;
+  touch-action: none;
 }
 
-.report-value {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle span {
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #8b968f;
+}
+
+.drag-handle:hover span,
+.drag-handle:focus span {
+  background: #3d6f64;
+}
+
+.drop-merge {
+  background: #f2f8ef;
+}
+
+.drop-before {
+  box-shadow: inset 0 3px 0 #3d6f64;
+}
+
+.drop-after {
+  box-shadow: inset 0 -3px 0 #3d6f64;
+}
+
+.merge-tooltip {
+  position: absolute;
+  top: 7px;
+  left: 46px;
+  z-index: 2;
+  max-width: calc(100% - 58px);
+  border: 1px solid #c6d7c2;
+  border-radius: 8px;
+  background: #fffdf9;
+  color: #2f5f4f;
+  padding: 7px 10px;
+  box-shadow: 0 4px 12px rgba(42, 34, 24, 0.12);
+  font-weight: 700;
+  overflow: hidden;
+  pointer-events: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merge-tooltip::before {
+  position: absolute;
+  top: 50%;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  border-bottom: 1px solid #c6d7c2;
+  border-left: 1px solid #c6d7c2;
+  background: #fffdf9;
+  content: '';
+  transform: translateY(-50%) rotate(45deg);
 }
 
 .daily-list {
@@ -809,6 +946,18 @@ button:disabled {
   padding-top: 0;
 }
 
+.merge-select-row {
+  display: inline-grid;
+  grid-auto-flow: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.merge-select-row input {
+  width: 18px;
+  min-height: 18px;
+}
+
 .merge-guidance {
   display: grid;
   gap: 4px;
@@ -839,6 +988,7 @@ button:disabled {
   .scope-total-grid,
   .category-tool-grid,
   .category-tool-grid form,
+  .report-header-row,
   .report-row,
   .daily-review-grid,
   .entry-row,

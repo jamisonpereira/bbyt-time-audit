@@ -29,6 +29,7 @@ export type Category = {
   lastUsedAt: string;
   valueTier?: CategoryValueTier;
   hourlyRate?: number;
+  sortOrder?: number;
 };
 
 export type CategoryAlias = {
@@ -58,6 +59,7 @@ export type AuditData = {
   entries: TimeEntry[];
   categories: Category[];
   aliases: CategoryAlias[];
+  mergeUndo?: MergeUndoSnapshot;
 };
 
 export type PromptState = {
@@ -101,6 +103,7 @@ export type SummaryState = {
   pendingBlocks: PendingBlockReviewItem[];
   auditStartedAt: string;
   previousFilledLabel: string | null;
+  canUndoMerge: boolean;
 };
 
 export type AuditReportRow = {
@@ -112,6 +115,7 @@ export type AuditReportRow = {
   valueTier?: CategoryValueTier;
   hourlyRate?: number;
   estimatedValue: number;
+  sortOrder: number;
 };
 
 export type AuditReportScopeTotal = {
@@ -142,6 +146,27 @@ export type CategoryRenameInput = {
 export type CategoryMergeInput = {
   sourceCategoryId: string;
   targetCategoryId: string;
+};
+
+export type CategoryMoveInput = {
+  categoryId: string;
+  direction: 'up' | 'down';
+};
+
+export type CategoryReorderInput = {
+  sourceCategoryId: string;
+  targetCategoryId: string;
+  position: 'before' | 'after';
+};
+
+export type MergeUndoSnapshot = {
+  createdAt: string;
+  categories: Category[];
+  aliases: CategoryAlias[];
+  entryCategoryIds: Array<{
+    entryId: string;
+    categoryId: string;
+  }>;
 };
 
 export type ArchiveInfo = {

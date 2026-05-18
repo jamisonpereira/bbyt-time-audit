@@ -22,6 +22,8 @@ import type {
   AppMode,
   AppSettings,
   CategoryMergeInput,
+  CategoryMoveInput,
+  CategoryReorderInput,
   CategoryRenameInput,
   CategoryValueInput,
   FileActionResult,
@@ -210,25 +212,7 @@ const refreshTrayMenu = () => {
       : [
           {
             label: 'Check for Updates',
-            click: async () => {
-              const result = await checkForReleaseUpdate();
-              await dialog.showMessageBox({
-                type: result.status === 'error' ? 'error' : 'info',
-                message:
-                  result.status === 'available'
-                    ? `Version ${result.latestVersion} is available`
-                    : 'No update available',
-                detail:
-                  result.status === 'available'
-                    ? 'Opening the GitHub release page so you can download the new version.'
-                    : result.message ??
-                      `You are running version ${result.currentVersion}.`,
-              });
-
-              if (result.status === 'available') {
-                await openLatestRelease();
-              }
-            },
+            click: checkForReleaseUpdateWithDialog,
           },
         ]),
     { type: 'separator' },
@@ -326,6 +310,28 @@ const checkForReleaseUpdate = async (): Promise<ReleaseUpdateResult> => {
 
   return latestReleaseCheck;
 };
+
+const checkForReleaseUpdateWithDialog =
+  async (): Promise<ReleaseUpdateResult> => {
+    const result = await checkForReleaseUpdate();
+    await dialog.showMessageBox({
+      type: result.status === 'error' ? 'error' : 'info',
+      message:
+        result.status === 'available'
+          ? `Version ${result.latestVersion} is available`
+          : 'No update available',
+      detail:
+        result.status === 'available'
+          ? 'Opening the GitHub release page so you can download the new version.'
+          : result.message ?? `You are running version ${result.currentVersion}.`,
+    });
+
+    if (result.status === 'available') {
+      await openLatestRelease();
+    }
+
+    return result;
+  };
 
 const openLatestRelease = async (): Promise<void> => {
   if (!latestReleaseCheck.releaseUrl) {
@@ -509,6 +515,19 @@ const registerIpc = () => {
       return summary;
     },
   );
+  ipcMain.handle('summary:moveCategory', (_event, input: CategoryMoveInput) => {
+    const summary = store.moveCategory(input);
+    broadcastSummaryChanged();
+    return summary;
+  });
+  ipcMain.handle(
+    'summary:reorderCategory',
+    (_event, input: CategoryReorderInput) => {
+      const summary = store.reorderCategory(input);
+      broadcastSummaryChanged();
+      return summary;
+    },
+  );
   ipcMain.handle('summary:addManualEntry', (_event, input: ManualEntryInput) => {
     const summary = store.addManualEntry(input);
     refreshTrayMenu();
@@ -571,10 +590,18 @@ const registerIpc = () => {
       return summary;
     },
   );
+  ipcMain.handle('merge:undoLast', () => {
+    const summary = store.undoLastMerge();
+    broadcastSummaryChanged();
+    return summary;
+  });
   ipcMain.handle('app:dataPath', () => store.getDataPath());
   ipcMain.handle('app:openSettings', () => showSettingsWindow());
   ipcMain.handle('app:openMerge', () => showMergeWindow());
   ipcMain.handle('app:checkForUpdates', () => checkForReleaseUpdate());
+  ipcMain.handle('app:checkForUpdatesWithDialog', () =>
+    checkForReleaseUpdateWithDialog(),
+  );
   ipcMain.handle('app:openLatestRelease', () => openLatestRelease());
   ipcMain.handle('window:closePrompt', () => {
     promptWindow?.hide();

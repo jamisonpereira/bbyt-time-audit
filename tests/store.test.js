@@ -83,6 +83,17 @@ async function main() {
   assert.equal(defaultTierSummary.auditReport.scopeTotals[2].scope, 'Other');
   assert.equal(defaultTierSummary.auditReport.scopeTotals[2].minutes, 60);
 
+  const meetingBeforeMove = defaultTierSummary.rows.find(
+    (row) => row.categoryName === 'development meeting',
+  );
+  assert.ok(meetingBeforeMove);
+  const movedSummary = importedStore.reorderCategory({
+    sourceCategoryId: meetingBeforeMove.categoryId,
+    targetCategoryId: emailRow.categoryId,
+    position: 'before',
+  });
+  assert.equal(movedSummary.auditReport.rows[0].categoryName, 'development meeting');
+
   const renamedSummary = importedStore.renameCategory({
     categoryId: emailRow.categoryId,
     name: 'Work - Email / Admin',
@@ -111,9 +122,54 @@ async function main() {
   const reportCsv = importedStore.exportAuditReportCsv();
   assert.match(
     reportCsv,
-    /"category","scope","minutes","hours","percent","value_tier","hourly_rate","estimated_value"/,
+    /"category","scope","minutes","hours","percent","value_tier"/,
   );
   assert.match(reportCsv, /Work - Email \/ Admin/);
+
+  const aiStore = new TimeAuditStore(path.join(tempRoot, 'ai-merge.json'));
+  aiStore.addManualEntry({
+    date: '2026-05-16',
+    startTime: '09:00',
+    endTime: '09:15',
+    label: 'work email',
+  });
+  aiStore.addManualEntry({
+    date: '2026-05-16',
+    startTime: '09:15',
+    endTime: '09:30',
+    label: 'read emails',
+  });
+  aiStore.addManualEntry({
+    date: '2026-05-16',
+    startTime: '09:30',
+    endTime: '09:45',
+    label: 'sales call',
+  });
+  aiStore.addManualEntry({
+    date: '2026-05-16',
+    startTime: '09:45',
+    endTime: '10:00',
+    label: 'sales meeting',
+  });
+
+  const selectivelyMerged = aiStore.applyMergeSuggestions([
+    {
+      canonical: 'Work - Email / Admin',
+      labels: ['work email', 'read emails'],
+    },
+  ]);
+  assert.equal(selectivelyMerged.canUndoMerge, true);
+  assert.deepEqual(
+    selectivelyMerged.rows.map((row) => row.categoryName).sort(),
+    ['Work - Email / Admin', 'sales call', 'sales meeting'],
+  );
+
+  const undoneMerge = aiStore.undoLastMerge();
+  assert.equal(undoneMerge.canUndoMerge, false);
+  assert.deepEqual(
+    undoneMerge.rows.map((row) => row.categoryName).sort(),
+    ['read emails', 'sales call', 'sales meeting', 'work email'],
+  );
 
   assert.throws(
     () => importedStore.importBackupJson('{"version":1,"entries":[]}'),

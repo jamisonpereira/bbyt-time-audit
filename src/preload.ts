@@ -3,6 +3,8 @@ import type {
   ArchiveInfo,
   AppSettings,
   CategoryMergeInput,
+  CategoryMoveInput,
+  CategoryReorderInput,
   CategoryRenameInput,
   CategoryValueInput,
   FileActionResult,
@@ -49,6 +51,10 @@ const api = {
     ipcRenderer.invoke('summary:renameCategory', input),
   mergeCategories: (input: CategoryMergeInput): Promise<SummaryState> =>
     ipcRenderer.invoke('summary:mergeCategories', input),
+  moveCategory: (input: CategoryMoveInput): Promise<SummaryState> =>
+    ipcRenderer.invoke('summary:moveCategory', input),
+  reorderCategory: (input: CategoryReorderInput): Promise<SummaryState> =>
+    ipcRenderer.invoke('summary:reorderCategory', input),
   addManualEntry: (input: ManualEntryInput): Promise<SummaryState> =>
     ipcRenderer.invoke('summary:addManualEntry', input),
   startNewAudit: (): Promise<SummaryState> =>
@@ -66,11 +72,14 @@ const api = {
   suggestMerges: (): Promise<MergeSuggestion[]> => ipcRenderer.invoke('merge:suggest'),
   applyMerges: (suggestions: MergeSuggestion[]): Promise<SummaryState> =>
     ipcRenderer.invoke('merge:apply', suggestions),
+  undoLastMerge: (): Promise<SummaryState> => ipcRenderer.invoke('merge:undoLast'),
   getDataPath: (): Promise<string> => ipcRenderer.invoke('app:dataPath'),
   openSettings: (): Promise<void> => ipcRenderer.invoke('app:openSettings'),
   openMerge: (): Promise<void> => ipcRenderer.invoke('app:openMerge'),
   checkForUpdates: (): Promise<ReleaseUpdateResult> =>
     ipcRenderer.invoke('app:checkForUpdates'),
+  checkForUpdatesWithDialog: (): Promise<ReleaseUpdateResult> =>
+    ipcRenderer.invoke('app:checkForUpdatesWithDialog'),
   openLatestRelease: (): Promise<void> =>
     ipcRenderer.invoke('app:openLatestRelease'),
   onPromptStateChanged: (callback: () => void): (() => void) => {
