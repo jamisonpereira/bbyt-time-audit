@@ -23,6 +23,11 @@ import {
 import { checkLatestRelease } from './main/releaseUpdates';
 import { PromptScheduler } from './main/scheduler';
 import { TimeAuditStore } from './main/store';
+import {
+  shouldOpenSummaryForAppActivation,
+  shouldOpenSummaryForStartup,
+  shouldOpenSummaryForTrayRequest,
+} from './main/windowPolicy';
 import type {
   AppMode,
   AppSettings,
@@ -181,6 +186,12 @@ const showSummaryWindow = () => {
   summaryWindow.focus();
 };
 
+const openSummaryFromTray = () => {
+  if (shouldOpenSummaryForTrayRequest()) {
+    showSummaryWindow();
+  }
+};
+
 const showMergeWindow = () => {
   if (!mergeWindow) {
     mergeWindow = new BrowserWindow({
@@ -212,7 +223,7 @@ const refreshTrayMenu = () => {
       enabled: false,
     },
     { type: 'separator' },
-    { label: 'Open Summary', click: showSummaryWindow },
+    { label: 'Open Summary', click: openSummaryFromTray },
     { label: 'Log Last 15', click: createManualPrompt },
     { label: 'Settings', click: showSettingsWindow },
     ...(latestReleaseCheck.status === 'available'
@@ -613,7 +624,7 @@ const createTray = () => {
     tray.setTitle('TA');
   }
   tray.setToolTip(appDisplayName);
-  tray.on('click', showSummaryWindow);
+  tray.on('click', openSummaryFromTray);
   refreshTrayMenu();
 };
 
@@ -838,7 +849,9 @@ app.on('ready', () => {
     getPromptWindow: () => promptWindow,
   });
   scheduler.start();
-  showSummaryWindow();
+  if (shouldOpenSummaryForStartup()) {
+    showSummaryWindow();
+  }
 });
 
 app.on('window-all-closed', (event) => {
@@ -846,7 +859,9 @@ app.on('window-all-closed', (event) => {
 });
 
 app.on('activate', () => {
-  showSummaryWindow();
+  if (shouldOpenSummaryForAppActivation()) {
+    showSummaryWindow();
+  }
 });
 
 app.on('before-quit', () => {
