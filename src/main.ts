@@ -17,7 +17,9 @@ import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { getMergeSuggestions } from './main/aiMerge';
 import {
+  type AutomaticUpdatePhase,
   createDownloadingUpdateDialog,
+  isAutomaticUpdateBusy,
   startAutomaticUpdates,
 } from './main/autoUpdates';
 import { checkLatestRelease } from './main/releaseUpdates';
@@ -55,6 +57,7 @@ let scheduler: PromptScheduler;
 let store: TimeAuditStore;
 let isQuitting = false;
 let automaticUpdatesStarted = false;
+let automaticUpdatePhase: AutomaticUpdatePhase = 'idle';
 let manualAutoUpdateCheck:
   | {
       resolve: (result: ReleaseUpdateResult) => void;
@@ -69,6 +72,19 @@ let latestReleaseCheck: ReleaseUpdateResult = {
   status: 'unavailable',
   currentVersion: app.getVersion(),
   message: 'No update check has run yet.',
+};
+
+const releaseUpdateWindows = () =>
+  [promptWindow, settingsWindow, summaryWindow, mergeWindow].filter(
+    (window): window is BrowserWindow => Boolean(window),
+  );
+
+const setLatestReleaseCheck = (result: ReleaseUpdateResult) => {
+  latestReleaseCheck = result;
+  refreshTrayMenu();
+  for (const window of releaseUpdateWindows()) {
+    window.webContents.send('release-update-changed', result);
+  }
 };
 
 const createAppUrl = (mode: AppMode): string => {
@@ -226,12 +242,31 @@ const refreshTrayMenu = () => {
     { label: 'Open Summary', click: openSummaryFromTray },
     { label: 'Log Last 15', click: createManualPrompt },
     { label: 'Settings', click: showSettingsWindow },
-    ...(latestReleaseCheck.status === 'available'
+    ...(latestReleaseCheck.status === 'checking'
       ? [
           {
-            label: downloadedUpdateName
-              ? 'Install Downloaded Update'
-              : `Update Available (${latestReleaseCheck.latestVersion ?? 'downloading'})`,
+            label: 'Checking for Updates...',
+            enabled: false,
+          },
+        ]
+      : latestReleaseCheck.status === 'downloading'
+        ? [
+            {
+              label: 'Downloading Update...',
+              enabled: false,
+            },
+          ]
+        : latestReleaseCheck.status === 'downloaded'
+          ? [
+              {
+                label: 'Install Downloaded Update',
+                click: checkForReleaseUpdateWithDialog,
+              },
+            ]
+          : latestReleaseCheck.status === 'available'
+      ? [
+          {
+            label: `Update Available (${latestReleaseCheck.latestVersion})`,
             click: automaticUpdatesStarted
               ? checkForReleaseUpdateWithDialog
               : openLatestRelease,
@@ -322,12 +357,9 @@ const createManualPrompt = () => {
 };
 
 const checkForReleaseUpdate = async (): Promise<ReleaseUpdateResult> => {
-  latestReleaseCheck = await checkLatestRelease(
-    releaseRepoOwner,
-    releaseRepoName,
-    app.getVersion(),
+  setLatestReleaseCheck(
+    await checkLatestRelease(releaseRepoOwner, releaseRepoName, app.getVersion()),
   );
-  refreshTrayMenu();
 
   if (latestReleaseCheck.status === 'available') {
     new Notification({
@@ -371,40 +403,40 @@ const showDownloadedUpdateDialog = async (
 
 const registerAutoUpdateEvents = () => {
   autoUpdater.on('checking-for-update', () => {
-    latestReleaseCheck = {
-      status: 'unavailable',
+    automaticUpdatePhase = 'checking';
+    setLatestReleaseCheck({
+      status: 'checking',
       currentVersion: app.getVersion(),
       message: 'Checking for updates...',
-    };
-    refreshTrayMenu();
+    });
   });
 
-  autoUpdater.on('update-available', () => {
+  autoUpdater.on('update-available', async () => {
+    automaticUpdatePhase = 'downloading';
     downloadedUpdateName = null;
-    latestReleaseCheck = {
-      status: 'available',
+    setLatestReleaseCheck({
+      status: 'downloading',
       currentVersion: app.getVersion(),
-      message: 'An update is available and is downloading.',
-    };
-    refreshTrayMenu();
+      message: 'Downloading the update now.',
+    });
 
     if (manualAutoUpdateCheck) {
       new Notification({
         title: `${appDisplayName} update found`,
         body: 'Downloading the update now. You will be prompted to restart when it is ready.',
       }).show();
-      void dialog.showMessageBox(createDownloadingUpdateDialog(appDisplayName));
       resolveManualAutoUpdateCheck(latestReleaseCheck);
+      await dialog.showMessageBox(createDownloadingUpdateDialog(appDisplayName));
     }
   });
 
   autoUpdater.on('update-not-available', async () => {
-    latestReleaseCheck = {
+    automaticUpdatePhase = 'idle';
+    setLatestReleaseCheck({
       status: 'current',
       currentVersion: app.getVersion(),
       message: `You are running version ${app.getVersion()}.`,
-    };
-    refreshTrayMenu();
+    });
 
     if (manualAutoUpdateCheck) {
       await dialog.showMessageBox({
@@ -419,26 +451,26 @@ const registerAutoUpdateEvents = () => {
   autoUpdater.on(
     'update-downloaded',
     async (_event, _releaseNotes, releaseName: string) => {
+      automaticUpdatePhase = 'downloaded';
       downloadedUpdateName = releaseName;
-      latestReleaseCheck = {
-        status: 'available',
+      setLatestReleaseCheck({
+        status: 'downloaded',
         currentVersion: app.getVersion(),
         releaseName,
         message: 'An update has been downloaded and is ready to install.',
-      };
-      refreshTrayMenu();
+      });
       resolveManualAutoUpdateCheck(latestReleaseCheck);
       await showDownloadedUpdateDialog(releaseName);
     },
   );
 
   autoUpdater.on('error', async (error) => {
-    latestReleaseCheck = {
+    automaticUpdatePhase = 'idle';
+    setLatestReleaseCheck({
       status: 'error',
       currentVersion: app.getVersion(),
       message: error instanceof Error ? error.message : 'Update check failed.',
-    };
-    refreshTrayMenu();
+    });
 
     if (manualAutoUpdateCheck) {
       const { response } = await dialog.showMessageBox({
@@ -468,6 +500,14 @@ const checkForAutomaticUpdateWithDialog =
       return latestReleaseCheck;
     }
 
+    if (isAutomaticUpdateBusy(automaticUpdatePhase)) {
+      if (automaticUpdatePhase === 'downloading') {
+        await dialog.showMessageBox(createDownloadingUpdateDialog(appDisplayName));
+      }
+
+      return latestReleaseCheck;
+    }
+
     if (manualAutoUpdateCheck) {
       return new Promise((resolve) => {
         const originalResolve = manualAutoUpdateCheck?.resolve;
@@ -490,8 +530,8 @@ const checkForAutomaticUpdateWithDialog =
           currentVersion: app.getVersion(),
           message: 'The update check did not finish within 60 seconds.',
         };
-        latestReleaseCheck = result;
-        refreshTrayMenu();
+        automaticUpdatePhase = 'idle';
+        setLatestReleaseCheck(result);
         resolveManualAutoUpdateCheck(result);
         await dialog.showMessageBox({
           type: 'error',
@@ -512,8 +552,8 @@ const checkForAutomaticUpdateWithDialog =
           message:
             error instanceof Error ? error.message : 'Update check failed.',
         };
-        latestReleaseCheck = result;
-        refreshTrayMenu();
+        automaticUpdatePhase = 'idle';
+        setLatestReleaseCheck(result);
         resolveManualAutoUpdateCheck(result);
       }
     });

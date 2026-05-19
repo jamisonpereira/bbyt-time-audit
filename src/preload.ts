@@ -92,6 +92,14 @@ const api = {
     ipcRenderer.on('summary-state-changed', listener);
     return () => ipcRenderer.removeListener('summary-state-changed', listener);
   },
+  onReleaseUpdateChanged: (
+    callback: (result: ReleaseUpdateResult) => void,
+  ): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, result: ReleaseUpdateResult) =>
+      callback(result);
+    ipcRenderer.on('release-update-changed', listener);
+    return () => ipcRenderer.removeListener('release-update-changed', listener);
+  },
 };
 
 contextBridge.exposeInMainWorld('jamosTime', api);

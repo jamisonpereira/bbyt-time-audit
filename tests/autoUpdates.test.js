@@ -5,6 +5,7 @@ async function main() {
     automaticUpdateRepo,
     createAutoUpdateOptions,
     createDownloadingUpdateDialog,
+    isAutomaticUpdateBusy,
     shouldUseAutomaticUpdates,
   } = await import('../dist-test/auto-updates/autoUpdates.mjs');
 
@@ -34,6 +35,11 @@ async function main() {
   assert.equal(dialog.message, 'Update found');
   assert.match(dialog.detail, /Downloading the update now/);
   assert.match(dialog.detail, /prompted to restart/);
+
+  assert.equal(isAutomaticUpdateBusy('idle'), false);
+  assert.equal(isAutomaticUpdateBusy('checking'), true);
+  assert.equal(isAutomaticUpdateBusy('downloading'), true);
+  assert.equal(isAutomaticUpdateBusy('downloaded'), false);
 
   console.log('auto update tests passed');
 }

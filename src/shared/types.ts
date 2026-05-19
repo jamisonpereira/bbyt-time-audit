@@ -185,7 +185,10 @@ export type ManualEntryInput = {
 
 export type ReleaseUpdateStatus =
   | 'available'
+  | 'checking'
   | 'current'
+  | 'downloaded'
+  | 'downloading'
   | 'unavailable'
   | 'error';
 

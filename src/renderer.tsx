@@ -55,6 +55,50 @@ const mode = (new URLSearchParams(window.location.search).get('mode') ??
   'summary') as AppMode;
 const appDisplayName = 'BBYT - Time Audit';
 
+const isReleaseUpdateBusy = (result: ReleaseUpdateResult | null): boolean =>
+  result?.status === 'checking' || result?.status === 'downloading';
+
+const getUpdateButtonLabel = (
+  checkingUpdate: boolean,
+  releaseUpdate: ReleaseUpdateResult | null,
+): string => {
+  if (checkingUpdate || releaseUpdate?.status === 'checking') {
+    return 'Checking...';
+  }
+
+  if (releaseUpdate?.status === 'downloading') {
+    return 'Downloading...';
+  }
+
+  if (releaseUpdate?.status === 'downloaded') {
+    return 'Install Update';
+  }
+
+  if (releaseUpdate?.status === 'available') {
+    return 'Update Available';
+  }
+
+  return 'Check Updates';
+};
+
+const getUpdateNotice = (
+  releaseUpdate: ReleaseUpdateResult | null,
+): string | null => {
+  if (releaseUpdate?.status === 'checking') {
+    return 'Checking for updates...';
+  }
+
+  if (releaseUpdate?.status === 'downloading') {
+    return 'Downloading update. You can keep using the app, and you will be prompted to restart when it is ready.';
+  }
+
+  if (releaseUpdate?.status === 'downloaded') {
+    return 'Update downloaded. Click Install Update to restart and apply it.';
+  }
+
+  return null;
+};
+
 function App() {
   if (mode === 'prompt') {
     return <PromptView />;
@@ -437,6 +481,17 @@ function SummaryView() {
     return window.jamosTime.onSummaryChanged(load);
   }, []);
 
+  useEffect(
+    () =>
+      window.jamosTime.onReleaseUpdateChanged((result) => {
+        setReleaseUpdate(result);
+        if (!isReleaseUpdateBusy(result)) {
+          setCheckingUpdate(false);
+        }
+      }),
+    [],
+  );
+
   if (!summary) {
     return <div className="page-shell">Loading...</div>;
   }
@@ -454,7 +509,7 @@ function SummaryView() {
           </button>
           <button onClick={() => window.jamosTime.openSettings()}>Settings</button>
           <button
-            disabled={checkingUpdate}
+            disabled={checkingUpdate || isReleaseUpdateBusy(releaseUpdate)}
             onClick={async () => {
               setCheckingUpdate(true);
               try {
@@ -465,11 +520,7 @@ function SummaryView() {
               }
             }}
           >
-            {checkingUpdate
-              ? 'Checking...'
-              : releaseUpdate?.status === 'available'
-                ? 'Update Available'
-                : 'Check Updates'}
+            {getUpdateButtonLabel(checkingUpdate, releaseUpdate)}
           </button>
           <button onClick={() => window.jamosTime.exportCsv()}>Export CSV</button>
           <button
@@ -536,6 +587,9 @@ function SummaryView() {
         </div>
       </section>
 
+      {getUpdateNotice(releaseUpdate) ? (
+        <div className="notice">{getUpdateNotice(releaseUpdate)}</div>
+      ) : null}
       {fileMessage ? <div className="notice">{fileMessage}</div> : null}
 
       <AccordionSection defaultOpen title="Missed blocks">

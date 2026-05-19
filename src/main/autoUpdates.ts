@@ -7,6 +7,12 @@ import {
 
 export const automaticUpdateRepo = 'jamisonpereira/bbyt-time-audit';
 
+export type AutomaticUpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'downloading'
+  | 'downloaded';
+
 export type UpdateDialogOptions = {
   type: 'info';
   buttons: string[];
@@ -57,6 +63,9 @@ export const createDownloadingUpdateDialog = (
   detail:
     'Downloading the update now. You will be prompted to restart when it is ready.',
 });
+
+export const isAutomaticUpdateBusy = (phase: AutomaticUpdatePhase): boolean =>
+  phase === 'checking' || phase === 'downloading';
 
 export const startAutomaticUpdates = ({
   isPackaged,
