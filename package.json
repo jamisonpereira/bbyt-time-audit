@@ -1,7 +1,7 @@
 {
   "name": "jamos-time",
   "productName": "BBYT - Time Audit",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A local-first 15-minute time audit app.",
   "main": ".vite/build/main.js",
   "private": true,
