@@ -16,7 +16,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 import { getMergeSuggestions } from './main/aiMerge';
-import { startAutomaticUpdates } from './main/autoUpdates';
+import {
+  createDownloadingUpdateDialog,
+  startAutomaticUpdates,
+} from './main/autoUpdates';
 import { checkLatestRelease } from './main/releaseUpdates';
 import { PromptScheduler } from './main/scheduler';
 import { TimeAuditStore } from './main/store';
@@ -379,6 +382,7 @@ const registerAutoUpdateEvents = () => {
         title: `${appDisplayName} update found`,
         body: 'Downloading the update now. You will be prompted to restart when it is ready.',
       }).show();
+      void dialog.showMessageBox(createDownloadingUpdateDialog(appDisplayName));
       resolveManualAutoUpdateCheck(latestReleaseCheck);
     }
   });

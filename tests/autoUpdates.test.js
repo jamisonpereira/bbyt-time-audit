@@ -4,6 +4,7 @@ async function main() {
   const {
     automaticUpdateRepo,
     createAutoUpdateOptions,
+    createDownloadingUpdateDialog,
     shouldUseAutomaticUpdates,
   } = await import('../dist-test/auto-updates/autoUpdates.mjs');
 
@@ -26,6 +27,13 @@ async function main() {
   assert.equal(options.updateSource.repo, automaticUpdateRepo);
   assert.equal(options.updateInterval, '1 hour');
   assert.equal(options.notifyUser, false);
+
+  const dialog = createDownloadingUpdateDialog('BBYT - Time Audit');
+  assert.equal(dialog.type, 'info');
+  assert.deepEqual(dialog.buttons, ['OK']);
+  assert.equal(dialog.message, 'Update found');
+  assert.match(dialog.detail, /Downloading the update now/);
+  assert.match(dialog.detail, /prompted to restart/);
 
   console.log('auto update tests passed');
 }

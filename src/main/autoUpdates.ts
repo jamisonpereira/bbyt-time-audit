@@ -7,6 +7,16 @@ import {
 
 export const automaticUpdateRepo = 'jamisonpereira/bbyt-time-audit';
 
+export type UpdateDialogOptions = {
+  type: 'info';
+  buttons: string[];
+  defaultId: number;
+  cancelId: number;
+  title: string;
+  message: string;
+  detail: string;
+};
+
 type AutomaticUpdateEnvironment = {
   isPackaged: boolean;
   platform: NodeJS.Platform;
@@ -33,6 +43,19 @@ export const createAutoUpdateOptions = (
   updateInterval: '1 hour',
   logger,
   notifyUser: false,
+});
+
+export const createDownloadingUpdateDialog = (
+  appDisplayName: string,
+): UpdateDialogOptions => ({
+  type: 'info',
+  buttons: ['OK'],
+  defaultId: 0,
+  cancelId: 0,
+  title: `${appDisplayName} Update`,
+  message: 'Update found',
+  detail:
+    'Downloading the update now. You will be prompted to restart when it is ready.',
 });
 
 export const startAutomaticUpdates = ({
