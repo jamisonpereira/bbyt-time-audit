@@ -1,6 +1,7 @@
 import electron from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { summarySectionDefinitions } from '../shared/types';
 import type {
   AppSettings,
   ArchiveInfo,
@@ -21,6 +22,7 @@ import type {
   PendingBlockReviewItem,
   PromptState,
   SummaryRow,
+  SummarySectionSetting,
   SummaryState,
   TimeBlock,
   TimeEntry,
@@ -45,6 +47,10 @@ const defaultSettings: AppSettings = {
   snoozeMinutes: 5,
   aiEndpoint: 'https://api.openai.com/v1/chat/completions',
   aiModel: 'gpt-4.1-mini',
+  summarySections: summarySectionDefinitions.map((section) => ({
+    id: section.id,
+    visible: true,
+  })),
 };
 
 const defaultData: AuditData = {
@@ -1013,7 +1019,36 @@ function normalizeSettings(input: AppSettings): AppSettings {
     apiKey: input.apiKey,
     aiEndpoint: input.aiEndpoint || defaultSettings.aiEndpoint,
     aiModel: input.aiModel || defaultSettings.aiModel,
+    summarySections: normalizeSummarySections(input.summarySections),
   };
+}
+
+function normalizeSummarySections(
+  input: SummarySectionSetting[] | undefined,
+): SummarySectionSetting[] {
+  const validIds = new Set(summarySectionDefinitions.map((section) => section.id));
+  const seen = new Set<string>();
+  const normalized: SummarySectionSetting[] = [];
+
+  for (const section of input ?? []) {
+    if (!validIds.has(section.id) || seen.has(section.id)) {
+      continue;
+    }
+
+    seen.add(section.id);
+    normalized.push({
+      id: section.id,
+      visible: section.visible !== false,
+    });
+  }
+
+  for (const section of summarySectionDefinitions) {
+    if (!seen.has(section.id)) {
+      normalized.push({ id: section.id, visible: true });
+    }
+  }
+
+  return normalized;
 }
 
 function buildDueBlocks(

@@ -49,6 +49,25 @@ export type AppSettings = {
   apiKey?: string;
   aiEndpoint: string;
   aiModel: string;
+  summarySections: SummarySectionSetting[];
+};
+
+export const summarySectionDefinitions = [
+  { id: 'missedBlocks', label: 'Missed blocks' },
+  { id: 'categoryTotals', label: 'Category totals' },
+  { id: 'auditReport', label: 'Audit report' },
+  { id: 'dailyTotals', label: 'Daily totals' },
+  { id: 'dailyReview', label: 'Daily review' },
+  { id: 'entries', label: 'Entries' },
+  { id: 'archives', label: 'Archived audits' },
+] as const;
+
+export type SummarySectionId =
+  (typeof summarySectionDefinitions)[number]['id'];
+
+export type SummarySectionSetting = {
+  id: SummarySectionId;
+  visible: boolean;
 };
 
 export type AuditData = {

@@ -1,16 +1,18 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
-import type {
-  AppMode,
-  ArchiveInfo,
-  AppSettings,
-  CategoryValueTier,
-  MergeSuggestion,
-  PromptState,
-  ReleaseUpdateResult,
-  SummaryState,
-  TimeBlock,
+import {
+  summarySectionDefinitions,
+  type AppMode,
+  type ArchiveInfo,
+  type AppSettings,
+  type CategoryValueTier,
+  type MergeSuggestion,
+  type PromptState,
+  type ReleaseUpdateResult,
+  type SummarySectionId,
+  type SummaryState,
+  type TimeBlock,
 } from './shared/types';
 import type { JamosTimeApi } from './preload';
 
@@ -54,6 +56,9 @@ type ReportDragState = {
 const mode = (new URLSearchParams(window.location.search).get('mode') ??
   'summary') as AppMode;
 const appDisplayName = 'BBYT - Time Audit';
+const summarySectionLabels = new Map(
+  summarySectionDefinitions.map((section) => [section.id, section.label]),
+);
 
 const isReleaseUpdateBusy = (result: ReleaseUpdateResult | null): boolean =>
   result?.status === 'checking' || result?.status === 'downloading';
@@ -219,18 +224,27 @@ function PromptView() {
         </button>
       </div>
 
-      {state.pendingCount > 1 ? (
-        <div className="pending-pill">{state.pendingCount} unfilled blocks</div>
-      ) : null}
+      <div
+        aria-hidden={state.pendingCount <= 1}
+        className={`pending-pill ${
+          state.pendingCount > 1 ? '' : 'prompt-placeholder'
+        }`}
+      >
+        {state.pendingCount > 1
+          ? `${state.pendingCount} unfilled blocks`
+          : 'No unfilled blocks'}
+      </div>
 
-      {state.previousFilledLabel ? (
-        <button
-          className="same-button"
-          onClick={() => save(state.previousFilledLabel ?? '')}
-        >
-          Same as previous: {state.previousFilledLabel}
-        </button>
-      ) : null}
+      <button
+        aria-hidden={!state.previousFilledLabel}
+        className={`same-button ${
+          state.previousFilledLabel ? '' : 'prompt-placeholder'
+        }`}
+        disabled={!state.previousFilledLabel}
+        onClick={() => save(state.previousFilledLabel ?? '')}
+      >
+        Same as previous: {state.previousFilledLabel ?? 'Last entry'}
+      </button>
 
       <div className="quick-row">
         {state.recentCategories.map((category) => (
@@ -259,15 +273,13 @@ function PromptView() {
         <button type="submit">Save</button>
       </form>
 
-      {suggestions.length > 0 ? (
-        <div className="suggestions">
-          {suggestions.map((category) => (
-            <button key={category.id} onClick={() => save(category.name)}>
-              {category.name}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <div className="suggestions" aria-live="polite">
+        {suggestions.map((category) => (
+          <button key={category.id} onClick={() => save(category.name)}>
+            {category.name}
+          </button>
+        ))}
+      </div>
 
       <div className="prompt-actions">
         <button
@@ -318,6 +330,40 @@ function SettingsView() {
       ? settings.activeDays.filter((candidate) => candidate !== day)
       : [...settings.activeDays, day].sort();
     update('activeDays', activeDays);
+  };
+
+  const moveSummarySection = (
+    sectionId: SummarySectionId,
+    direction: 'up' | 'down',
+  ) => {
+    const currentIndex = settings.summarySections.findIndex(
+      (section) => section.id === sectionId,
+    );
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (
+      currentIndex < 0 ||
+      targetIndex < 0 ||
+      targetIndex >= settings.summarySections.length
+    ) {
+      return;
+    }
+
+    const nextSections = [...settings.summarySections];
+    const [section] = nextSections.splice(currentIndex, 1);
+    nextSections.splice(targetIndex, 0, section);
+    update('summarySections', nextSections);
+  };
+
+  const toggleSummarySection = (
+    sectionId: SummarySectionId,
+    visible: boolean,
+  ) => {
+    update(
+      'summarySections',
+      settings.summarySections.map((section) =>
+        section.id === sectionId ? { ...section, visible } : section,
+      ),
+    );
   };
 
   return (
@@ -439,6 +485,40 @@ function SettingsView() {
         </div>
       </section>
 
+      <section className="panel">
+        <h2>Summary page</h2>
+        <div className="summary-section-list">
+          {settings.summarySections.map((section, index) => (
+            <div className="summary-section-row" key={section.id}>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={section.visible}
+                  onChange={(event) =>
+                    toggleSummarySection(section.id, event.target.checked)
+                  }
+                />
+                <span>{summarySectionLabels.get(section.id) ?? section.id}</span>
+              </label>
+              <div className="summary-section-actions">
+                <button
+                  disabled={index === 0}
+                  onClick={() => moveSummarySection(section.id, 'up')}
+                >
+                  Up
+                </button>
+                <button
+                  disabled={index === settings.summarySections.length - 1}
+                  onClick={() => moveSummarySection(section.id, 'down')}
+                >
+                  Down
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="panel compact">
         <h2>Local data</h2>
         <code>{dataPath}</code>
@@ -463,6 +543,7 @@ function SettingsView() {
 
 function SummaryView() {
   const [summary, setSummary] = useState<SummaryState | null>(null);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const [dataPath, setDataPath] = useState('');
   const [archives, setArchives] = useState<ArchiveInfo[]>([]);
   const [fileMessage, setFileMessage] = useState('');
@@ -471,9 +552,17 @@ function SummaryView() {
     useState<ReleaseUpdateResult | null>(null);
 
   const load = async () => {
-    setSummary(await window.jamosTime.getSummary());
-    setDataPath(await window.jamosTime.getDataPath());
-    setArchives(await window.jamosTime.getArchives());
+    const [nextSummary, nextSettings, nextDataPath, nextArchives] =
+      await Promise.all([
+        window.jamosTime.getSummary(),
+        window.jamosTime.getSettings(),
+        window.jamosTime.getDataPath(),
+        window.jamosTime.getArchives(),
+      ]);
+    setSummary(nextSummary);
+    setSettings(nextSettings);
+    setDataPath(nextDataPath);
+    setArchives(nextArchives);
   };
 
   useEffect(() => {
@@ -492,9 +581,144 @@ function SummaryView() {
     [],
   );
 
-  if (!summary) {
+  if (!summary || !settings) {
     return <div className="page-shell">Loading...</div>;
   }
+
+  const renderSummarySection = (sectionId: SummarySectionId) => {
+    switch (sectionId) {
+      case 'missedBlocks':
+        return (
+          <AccordionSection defaultOpen key={sectionId} title="Missed blocks">
+            <PendingBlocksTable
+              pendingBlocks={summary.pendingBlocks}
+              previousFilledLabel={summary.previousFilledLabel}
+              onFill={async (blockIds, label) => {
+                const next = await window.jamosTime.fillPendingBlocks(
+                  blockIds,
+                  label,
+                );
+                setSummary(next);
+              }}
+              onSkip={async (blockIds) => {
+                const next = await window.jamosTime.skipPendingBlocks(blockIds);
+                setSummary(next);
+              }}
+              onDelete={async (blockIds) => {
+                const next = await window.jamosTime.deletePendingBlocks(blockIds);
+                setSummary(next);
+              }}
+            />
+          </AccordionSection>
+        );
+
+      case 'categoryTotals':
+        return (
+          <AccordionSection
+            action={
+              <button onClick={() => window.jamosTime.openMerge()}>AI Merge</button>
+            }
+            defaultOpen
+            key={sectionId}
+            title="Category totals"
+          >
+            <SummaryTable rows={summary.rows} totalMinutes={summary.totalMinutes} />
+          </AccordionSection>
+        );
+
+      case 'auditReport':
+        return (
+          <AccordionSection defaultOpen key={sectionId} title="Audit report">
+            <AuditReportView
+              report={summary.auditReport}
+              onExport={() => window.jamosTime.exportAuditReportCsv()}
+              onUpdateValue={async (input) => {
+                const next = await window.jamosTime.updateCategoryValue(input);
+                setSummary(next);
+              }}
+              onRenameCategory={async (input) => {
+                const next = await window.jamosTime.renameCategory(input);
+                setSummary(next);
+              }}
+              onMergeCategories={async (input) => {
+                const next = await window.jamosTime.mergeCategories(input);
+                setSummary(next);
+              }}
+              onReorderCategory={async (input) => {
+                const next = await window.jamosTime.reorderCategory(input);
+                setSummary(next);
+              }}
+            />
+          </AccordionSection>
+        );
+
+      case 'dailyTotals':
+        return (
+          <AccordionSection defaultOpen key={sectionId} title="Daily totals">
+            <div className="daily-list">
+              {summary.days.map((day) => (
+                <details key={day.date} open>
+                  <summary>
+                    <span>{day.date}</span>
+                    <strong>{formatMinutes(day.totalMinutes)}</strong>
+                  </summary>
+                  <SummaryTable rows={day.rows} totalMinutes={day.totalMinutes} />
+                </details>
+              ))}
+            </div>
+          </AccordionSection>
+        );
+
+      case 'dailyReview':
+        return (
+          <AccordionSection defaultOpen key={sectionId} title="Daily review">
+            <DailyReviewList dayReviews={summary.dayReviews} />
+          </AccordionSection>
+        );
+
+      case 'entries':
+        return (
+          <AccordionSection defaultOpen key={sectionId} title="Entries">
+            <ManualEntryForm
+              onAdd={async (input) => {
+                const next = await window.jamosTime.addManualEntry(input);
+                setSummary(next);
+              }}
+            />
+            <EntryTable
+              entries={summary.entries}
+              onDelete={async (entryIds) => {
+                const next = await window.jamosTime.deleteEntries(entryIds);
+                setSummary(next);
+              }}
+              onUpdate={async (entryId, label) => {
+                const next = await window.jamosTime.updateEntry(entryId, label);
+                setSummary(next);
+              }}
+            />
+          </AccordionSection>
+        );
+
+      case 'archives':
+        return (
+          <AccordionSection key={sectionId} title="Archived audits">
+            <ArchiveList
+              archives={archives}
+              onLoad={async (fileName) => {
+                const confirmed = window.confirm(
+                  'Load this archive? Your current audit will be archived first.',
+                );
+                if (confirmed) {
+                  const next = await window.jamosTime.loadArchive(fileName);
+                  setSummary(next);
+                  setArchives(await window.jamosTime.getArchives());
+                }
+              }}
+            />
+          </AccordionSection>
+        );
+    }
+  };
 
   return (
     <div className="page-shell">
@@ -592,109 +816,9 @@ function SummaryView() {
       ) : null}
       {fileMessage ? <div className="notice">{fileMessage}</div> : null}
 
-      <AccordionSection defaultOpen title="Missed blocks">
-        <PendingBlocksTable
-          pendingBlocks={summary.pendingBlocks}
-          previousFilledLabel={summary.previousFilledLabel}
-          onFill={async (blockIds, label) => {
-            const next = await window.jamosTime.fillPendingBlocks(blockIds, label);
-            setSummary(next);
-          }}
-          onSkip={async (blockIds) => {
-            const next = await window.jamosTime.skipPendingBlocks(blockIds);
-            setSummary(next);
-          }}
-          onDelete={async (blockIds) => {
-            const next = await window.jamosTime.deletePendingBlocks(blockIds);
-            setSummary(next);
-          }}
-        />
-      </AccordionSection>
-
-      <AccordionSection
-        defaultOpen
-        title="Category totals"
-        action={<button onClick={() => window.jamosTime.openMerge()}>AI Merge</button>}
-      >
-        <SummaryTable rows={summary.rows} totalMinutes={summary.totalMinutes} />
-      </AccordionSection>
-
-      <AccordionSection defaultOpen title="Audit report">
-        <AuditReportView
-          report={summary.auditReport}
-          onExport={() => window.jamosTime.exportAuditReportCsv()}
-          onUpdateValue={async (input) => {
-            const next = await window.jamosTime.updateCategoryValue(input);
-            setSummary(next);
-          }}
-          onRenameCategory={async (input) => {
-            const next = await window.jamosTime.renameCategory(input);
-            setSummary(next);
-          }}
-          onMergeCategories={async (input) => {
-            const next = await window.jamosTime.mergeCategories(input);
-            setSummary(next);
-          }}
-          onReorderCategory={async (input) => {
-            const next = await window.jamosTime.reorderCategory(input);
-            setSummary(next);
-          }}
-        />
-      </AccordionSection>
-
-      <AccordionSection defaultOpen title="Daily totals">
-        <div className="daily-list">
-          {summary.days.map((day) => (
-            <details key={day.date} open>
-              <summary>
-                <span>{day.date}</span>
-                <strong>{formatMinutes(day.totalMinutes)}</strong>
-              </summary>
-              <SummaryTable rows={day.rows} totalMinutes={day.totalMinutes} />
-            </details>
-          ))}
-        </div>
-      </AccordionSection>
-
-      <AccordionSection defaultOpen title="Daily review">
-        <DailyReviewList dayReviews={summary.dayReviews} />
-      </AccordionSection>
-
-      <AccordionSection defaultOpen title="Entries">
-        <ManualEntryForm
-          onAdd={async (input) => {
-            const next = await window.jamosTime.addManualEntry(input);
-            setSummary(next);
-          }}
-        />
-        <EntryTable
-          entries={summary.entries}
-          onDelete={async (entryIds) => {
-            const next = await window.jamosTime.deleteEntries(entryIds);
-            setSummary(next);
-          }}
-          onUpdate={async (entryId, label) => {
-            const next = await window.jamosTime.updateEntry(entryId, label);
-            setSummary(next);
-          }}
-        />
-      </AccordionSection>
-
-      <AccordionSection title="Archived audits">
-        <ArchiveList
-          archives={archives}
-          onLoad={async (fileName) => {
-            const confirmed = window.confirm(
-              'Load this archive? Your current audit will be archived first.',
-            );
-            if (confirmed) {
-              const next = await window.jamosTime.loadArchive(fileName);
-              setSummary(next);
-              setArchives(await window.jamosTime.getArchives());
-            }
-          }}
-        />
-      </AccordionSection>
+      {settings.summarySections
+        .filter((section) => section.visible)
+        .map((section) => renderSummarySection(section.id))}
     </div>
   );
 }

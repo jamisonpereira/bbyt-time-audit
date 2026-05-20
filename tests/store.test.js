@@ -9,6 +9,45 @@ async function main() {
   const dataPath = path.join(tempRoot, 'audit.json');
   const store = new TimeAuditStore(dataPath);
 
+  assert.deepEqual(
+    store.getSettings().summarySections.map((section) => [
+      section.id,
+      section.visible,
+    ]),
+    [
+      ['missedBlocks', true],
+      ['categoryTotals', true],
+      ['auditReport', true],
+      ['dailyTotals', true],
+      ['dailyReview', true],
+      ['entries', true],
+      ['archives', true],
+    ],
+  );
+
+  const reorderedSettings = store.updateSettings({
+    ...store.getSettings(),
+    summarySections: [
+      { id: 'auditReport', visible: true },
+      { id: 'missedBlocks', visible: false },
+    ],
+  });
+  assert.deepEqual(
+    reorderedSettings.summarySections.map((section) => [
+      section.id,
+      section.visible,
+    ]),
+    [
+      ['auditReport', true],
+      ['missedBlocks', false],
+      ['categoryTotals', true],
+      ['dailyTotals', true],
+      ['dailyReview', true],
+      ['entries', true],
+      ['archives', true],
+    ],
+  );
+
   store.addManualEntry({
     date: '2026-05-15',
     startTime: '09:00',

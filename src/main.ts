@@ -675,6 +675,7 @@ const registerIpc = () => {
     applyLaunchAtLogin();
     refreshTrayMenu();
     scheduler.tick();
+    broadcastSummaryChanged();
     return updated;
   });
   ipcMain.handle('prompt:get', () => store.getPromptState());

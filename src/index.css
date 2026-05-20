@@ -97,15 +97,20 @@ code {
 }
 
 .prompt-shell {
+  display: grid;
+  grid-template-rows: auto 24px 36px 104px 38px 44px 36px;
+  align-content: start;
+  gap: 7px;
   min-height: 100vh;
   max-height: 100vh;
-  overflow: auto;
-  padding: 16px;
+  overflow: hidden;
+  padding: 14px;
   background: #fffdf9;
   border: 1px solid #d9d1c4;
 }
 
 .empty-prompt {
+  grid-template-rows: auto auto;
   display: grid;
   align-content: center;
   justify-items: start;
@@ -143,14 +148,20 @@ code {
 .pending-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  margin-top: 12px;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 24px;
   border-radius: 999px;
   background: #e8efe7;
   color: #2f5f4f;
   padding: 0 10px;
   font-size: 0.85rem;
   font-weight: 700;
+}
+
+.prompt-placeholder {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .quick-row,
@@ -163,13 +174,16 @@ code {
 }
 
 .quick-row {
-  margin-top: 14px;
+  align-content: start;
+  min-height: 104px;
+  max-height: 104px;
+  overflow: hidden;
 }
 
 .same-button {
   justify-content: start;
   width: 100%;
-  margin-top: 14px;
+  min-height: 36px;
   overflow: hidden;
   color: #2f5f4f;
   font-weight: 700;
@@ -179,7 +193,8 @@ code {
 }
 
 .quick-button {
-  max-width: 148px;
+  width: 156px;
+  min-height: 30px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -189,25 +204,40 @@ code {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 8px;
-  margin-top: 12px;
+  min-height: 38px;
+}
+
+.entry-form button {
+  width: 68px;
+  min-height: 38px;
 }
 
 .suggestions {
-  max-height: 72px;
-  margin-top: 10px;
+  align-content: start;
+  min-height: 44px;
+  max-height: 44px;
   overflow: auto;
 }
 
 .suggestions button {
+  max-width: 168px;
   min-height: 28px;
   border-radius: 999px;
   color: #46514d;
   font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .prompt-actions {
   justify-content: flex-end;
-  margin-top: 12px;
+  min-height: 36px;
+}
+
+.prompt-actions button {
+  width: 86px;
+  min-height: 36px;
 }
 
 .page-shell {
@@ -336,6 +366,35 @@ label {
 .setting-row {
   margin-top: 12px;
   justify-content: start;
+}
+
+.summary-section-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.summary-section-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid #eee6dc;
+  padding-top: 8px;
+}
+
+.summary-section-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.summary-section-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.summary-section-actions button {
+  width: 64px;
 }
 
 .sticky-actions {
