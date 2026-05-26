@@ -1,7 +1,7 @@
 {
   "name": "jamos-time",
   "productName": "BBYT - Time Audit",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "A local-first 15-minute time audit app.",
   "main": ".vite/build/main.js",
   "private": true,
@@ -15,6 +15,7 @@
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
     "test:store": "vite build --ssr src/main/store.ts --outDir dist-test/store --emptyOutDir && node tests/store.test.js",
+    "test:selection": "vite build --ssr src/shared/selection.ts --outDir dist-test/selection --emptyOutDir && node tests/selection.test.js",
     "test:ai-merge": "vite build --ssr src/main/aiMerge.ts --outDir dist-test/ai-merge --emptyOutDir && node tests/aiMerge.test.js",
     "test:auto-updates": "vite build --ssr src/main/autoUpdates.ts --outDir dist-test/auto-updates --emptyOutDir && node tests/autoUpdates.test.js",
     "test:release-updates": "vite build --ssr src/main/releaseUpdates.ts --outDir dist-test/release-updates --emptyOutDir && node tests/releaseUpdates.test.js",

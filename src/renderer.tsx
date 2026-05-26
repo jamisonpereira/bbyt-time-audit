@@ -1,6 +1,7 @@
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css';
+import { updateRangeSelection } from './shared/selection';
 import {
   summarySectionDefinitions,
   type AppMode,
@@ -1529,6 +1530,7 @@ function PendingBlocksTable({
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [label, setLabel] = useState('');
+  const lastSelectedBlockId = useRef<string | null>(null);
 
   if (pendingBlocks.length === 0) {
     return <div className="empty">No missed blocks.</div>;
@@ -1537,12 +1539,23 @@ function PendingBlocksTable({
   const selectedSet = new Set(selected);
   const allSelected =
     pendingBlocks.length > 0 && selected.length === pendingBlocks.length;
-  const toggleSelected = (blockId: string) => {
+  const toggleSelected = (
+    blockId: string,
+    checked: boolean,
+    shiftKey: boolean,
+  ) => {
+    const orderedIds = pendingBlocks.map((block) => block.id);
     setSelected((current) =>
-      current.includes(blockId)
-        ? current.filter((id) => id !== blockId)
-        : [...current, blockId],
+      updateRangeSelection({
+        orderedIds,
+        selectedIds: current,
+        clickedId: blockId,
+        anchorId: lastSelectedBlockId.current,
+        checked,
+        shiftKey,
+      }),
     );
+    lastSelectedBlockId.current = blockId;
   };
   const selectedCount = selected.length;
 
@@ -1553,13 +1566,14 @@ function PendingBlocksTable({
           <input
             type="checkbox"
             checked={allSelected}
-            onChange={(event) =>
+            onChange={(event) => {
+              lastSelectedBlockId.current = null;
               setSelected(
                 event.target.checked
                   ? pendingBlocks.map((block) => block.id)
                   : [],
-              )
-            }
+              );
+            }}
           />
           <span>Select all</span>
         </label>
@@ -1574,6 +1588,7 @@ function PendingBlocksTable({
           onClick={async () => {
             await onFill(selected, label);
             setSelected([]);
+            lastSelectedBlockId.current = null;
             setLabel('');
           }}
         >
@@ -1585,6 +1600,7 @@ function PendingBlocksTable({
             if (previousFilledLabel) {
               await onFill(selected, previousFilledLabel);
               setSelected([]);
+              lastSelectedBlockId.current = null;
             }
           }}
         >
@@ -1601,6 +1617,7 @@ function PendingBlocksTable({
             if (confirmed) {
               await onSkip(selected);
               setSelected([]);
+              lastSelectedBlockId.current = null;
             }
           }}
         >
@@ -1618,6 +1635,7 @@ function PendingBlocksTable({
             if (confirmed) {
               await onDelete(selected);
               setSelected([]);
+              lastSelectedBlockId.current = null;
             }
           }}
         >
@@ -1632,7 +1650,16 @@ function PendingBlocksTable({
               aria-label={`Select block ${block.date}`}
               checked={selectedSet.has(block.id)}
               type="checkbox"
-              onChange={() => toggleSelected(block.id)}
+              onChange={(event) => {
+                const nativeEvent = event.nativeEvent as Event & {
+                  shiftKey?: boolean;
+                };
+                toggleSelected(
+                  block.id,
+                  event.target.checked,
+                  Boolean(nativeEvent.shiftKey),
+                );
+              }}
             />
             <div>
               <strong>{block.date}</strong>
