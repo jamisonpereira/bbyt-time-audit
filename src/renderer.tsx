@@ -1531,10 +1531,34 @@ function PendingBlocksTable({
   const [selected, setSelected] = useState<string[]>([]);
   const [label, setLabel] = useState('');
   const lastSelectedBlockId = useRef<string | null>(null);
+  const selectedRef = useRef<string[]>([]);
+  const shiftKeyPressed = useRef(false);
+  const pendingListRef = useRef<HTMLDivElement | null>(null);
 
-  if (pendingBlocks.length === 0) {
-    return <div className="empty">No missed blocks.</div>;
-  }
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        shiftKeyPressed.current = true;
+      }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') {
+        shiftKeyPressed.current = false;
+      }
+    };
+    const onBlur = () => {
+      shiftKeyPressed.current = false;
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
 
   const selectedSet = new Set(selected);
   const allSelected =
@@ -1545,19 +1569,94 @@ function PendingBlocksTable({
     shiftKey: boolean,
   ) => {
     const orderedIds = pendingBlocks.map((block) => block.id);
-    setSelected((current) =>
-      updateRangeSelection({
+    const anchorId = lastSelectedBlockId.current;
+    setSelected((current) => {
+      const nextSelected = updateRangeSelection({
         orderedIds,
         selectedIds: current,
         clickedId: blockId,
-        anchorId: lastSelectedBlockId.current,
+        anchorId,
         checked,
         shiftKey,
-      }),
-    );
+      });
+      selectedRef.current = nextSelected;
+      return nextSelected;
+    });
     lastSelectedBlockId.current = blockId;
   };
+  const replaceSelected = (nextSelected: string[]) => {
+    selectedRef.current = nextSelected;
+    setSelected(nextSelected);
+  };
+  const clearSelected = () => {
+    lastSelectedBlockId.current = null;
+    replaceSelected([]);
+  };
   const selectedCount = selected.length;
+
+  useEffect(() => {
+    const listElement = pendingListRef.current;
+    if (!listElement) {
+      return undefined;
+    }
+
+    const onCheckboxMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0) {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      const blockId = target.dataset.pendingBlockId;
+      if (!blockId) {
+        return;
+      }
+
+      event.preventDefault();
+      toggleSelected(
+        blockId,
+        !selectedRef.current.includes(blockId),
+        event.shiftKey || shiftKeyPressed.current,
+      );
+    };
+
+    const onCheckboxKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== ' ' && event.key !== 'Enter') {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      const blockId = target.dataset.pendingBlockId;
+      if (!blockId) {
+        return;
+      }
+
+      event.preventDefault();
+      toggleSelected(
+        blockId,
+        !selectedRef.current.includes(blockId),
+        event.shiftKey || shiftKeyPressed.current,
+      );
+    };
+
+    listElement.addEventListener('mousedown', onCheckboxMouseDown, true);
+    listElement.addEventListener('keydown', onCheckboxKeyDown);
+    return () => {
+      listElement.removeEventListener('mousedown', onCheckboxMouseDown, true);
+      listElement.removeEventListener('keydown', onCheckboxKeyDown);
+    };
+  }, [pendingBlocks]);
+
+  if (pendingBlocks.length === 0) {
+    return <div className="empty">No missed blocks.</div>;
+  }
 
   return (
     <>
@@ -1568,7 +1667,7 @@ function PendingBlocksTable({
             checked={allSelected}
             onChange={(event) => {
               lastSelectedBlockId.current = null;
-              setSelected(
+              replaceSelected(
                 event.target.checked
                   ? pendingBlocks.map((block) => block.id)
                   : [],
@@ -1587,8 +1686,7 @@ function PendingBlocksTable({
           disabled={selectedCount === 0 || label.trim().length === 0}
           onClick={async () => {
             await onFill(selected, label);
-            setSelected([]);
-            lastSelectedBlockId.current = null;
+            clearSelected();
             setLabel('');
           }}
         >
@@ -1599,8 +1697,7 @@ function PendingBlocksTable({
           onClick={async () => {
             if (previousFilledLabel) {
               await onFill(selected, previousFilledLabel);
-              setSelected([]);
-              lastSelectedBlockId.current = null;
+              clearSelected();
             }
           }}
         >
@@ -1616,8 +1713,7 @@ function PendingBlocksTable({
             );
             if (confirmed) {
               await onSkip(selected);
-              setSelected([]);
-              lastSelectedBlockId.current = null;
+              clearSelected();
             }
           }}
         >
@@ -1634,8 +1730,7 @@ function PendingBlocksTable({
             );
             if (confirmed) {
               await onDelete(selected);
-              setSelected([]);
-              lastSelectedBlockId.current = null;
+              clearSelected();
             }
           }}
         >
@@ -1643,23 +1738,15 @@ function PendingBlocksTable({
         </button>
       </div>
 
-      <div className="pending-list">
+      <div className="pending-list" ref={pendingListRef}>
         {pendingBlocks.map((block) => (
           <div className="pending-row" key={block.id}>
             <input
               aria-label={`Select block ${block.date}`}
               checked={selectedSet.has(block.id)}
+              data-pending-block-id={block.id}
+              readOnly
               type="checkbox"
-              onChange={(event) => {
-                const nativeEvent = event.nativeEvent as Event & {
-                  shiftKey?: boolean;
-                };
-                toggleSelected(
-                  block.id,
-                  event.target.checked,
-                  Boolean(nativeEvent.shiftKey),
-                );
-              }}
             />
             <div>
               <strong>{block.date}</strong>
